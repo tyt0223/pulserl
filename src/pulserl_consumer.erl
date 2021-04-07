@@ -14,9 +14,9 @@
 
 %% Producer API
 %% gen_Server API
--export([start_link/2]).
+-export([start_link/3]).
 %% Consumer API
--export([close/1, close/2, create/2]).
+-export([close/1, close/2, create/3]).
 -export([ack/3, nack/2, negative_ack/2, receive_message/1, redeliver_unack_messages/1,
          seek/2]).
 %% gen_server callbacks
@@ -80,16 +80,16 @@ call_associated_consumer(Pid, Request) ->
             Other
     end.
 
-create(#topic{} = Topic, Options) ->
+create(#topic{} = Topic, Subscription, Options) ->
     case whereis(pulserl_client) of
         ?UNDEF ->
             ?ERROR_CLIENT_NOT_STARTED;
         _ ->
             Options2 = validate_options(Options),
-            supervisor:start_child(pulserl_consumer_sup, [Topic, Options2])
+            supervisor:start_child(pulserl_consumer_sup, [Topic, Subscription, Options2])
     end.
 
-start_link(#topic{} = Topic, Options) ->
+start_link(#topic{} = Topic, Subscription, Options) ->
     gen_server:start_link(?MODULE, [Topic, Options], []).
 
 close(Pid) ->
@@ -155,14 +155,14 @@ send_message_to_dead_letter(Pid, Message) ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([#topic{} = Topic, Opts]) ->
+init([#topic{} = Topic, Subscription, Opts]) ->
     process_flag(trap_exit, true),
     ConsumerOpts = proplists:get_value(consumer, Opts, []),
     ParentConsumer = proplists:get_value(parent_consumer, Opts),
     QueueSize =
         erlang:max(
             proplists:get_value(queue_size, Opts, 1000), 1),
-    SubscriptionName = proplists:get_value(subscription_name, ConsumerOpts, "pulserl"),
+    SubscriptionName = Subscription,
     SubscriptionType =
         proplists:get_value(subscription_type, ConsumerOpts, ?SHARED_SUBSCRIPTION),
     NegAckDelay =
@@ -1107,7 +1107,9 @@ close_children(State) ->
 foreach_child(Fun, State) when is_function(Fun) ->
     lists:foreach(Fun, maps:keys(State#state.child_to_partition)).
 
-notify_instance_provider_of_state(#state{topic = Topic, parent_consumer = ParentPid} =
+notify_instance_provider_of_state(#state{topic = Topic,
+                                         consumer_subscription_name = Subscription,
+                                         parent_consumer = ParentPid} =
                                       State,
                                   Event) ->
     if ParentPid == ?UNDEF ->
@@ -1115,7 +1117,7 @@ notify_instance_provider_of_state(#state{topic = Topic, parent_consumer = Parent
            %% 1  -> a non-partitioned consumer or
            %%
            %% 2  -> a parent of a some partitioned consumer.
-           erlang:send(pulserl_instance_registry, {Event, self(), Topic});
+           erlang:send(pulserl_instance_registry, {Event, self(), Topic, Subscription});
        true ->
            ok
     end,

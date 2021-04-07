@@ -13,16 +13,21 @@
 
 %% API
 -export([start_link/0]).
--export([get_consumer/2, get_producer/2]).
+-export([get_consumer/3, get_producer/2]).
 %% gen_server callbacks
 -export([code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
          terminate/2]).
 
 -define(SERVER, ?MODULE).
 
-get_consumer(Topic, Options) ->
+consumer_key(Topic, Subscription) ->
+    io:format("~s:~s", [Topic, Subscription]).
+
+get_consumer(Topic, Subscription, Options) ->
     Topic2 = topic_utils:parse(Topic),
-    case ets:lookup(pulserl_consumers, topic_utils:to_string(Topic2)) of
+    case ets:lookup(pulserl_consumers,
+                    consumer_key(topic_utils:to_string(Topic2), Subscription))
+    of
         [] ->
             gen_server:call(?SERVER, {new_consumer, Topic2, Options}, 32000);
         Producers ->
@@ -48,17 +53,19 @@ start_link() ->
 init([]) ->
     {ok, #state{}}.
 
-handle_call({new_consumer, Topic, Options}, _From, State) ->
-    case ets:lookup(pulserl_consumers, topic_utils:to_string(Topic)) of
+handle_call({new_consumer, Topic, Subscription, Options}, _From, State) ->
+    case ets:lookup(pulserl_consumers,
+                    consumer_key(topic_utils:to_string(Topic), Subscription))
+    of
         [] ->
             Reply =
-                case pulserl:start_consumer(Topic, Options) of
+                case pulserl:start_consumer(Topic, Subscription, Options) of
                     {ok, Pid} = Res ->
                         %% Normally, this process will eventually update its topic-consumer
                         %% index from the `consumer_up` message sent from the started consumer.
                         %% However, if rely on that in this case, we may suffer from race condition.
                         %% Hence, we update the index immediately here
-                        update_topic_consumer_index(Topic, Pid, true),
+                        update_topic_consumer_index(Topic, Subscription, Pid, true),
                         %% If the broker has some unAck/unsent messages
                         %% and the consumer is created for the first time via
                         %% pulserl:consumer/1, sometimes the call returns without
@@ -109,11 +116,11 @@ handle_info({producer_up, ProducerPid, Topic}, State) ->
 handle_info({producer_down, ProducerPid, Topic}, State) ->
     update_topic_producer_index(Topic, ProducerPid, false),
     {noreply, State};
-handle_info({consumer_up, ConsumerPid, Topic}, State) ->
-    update_topic_consumer_index(Topic, ConsumerPid, true),
+handle_info({consumer_up, ConsumerPid, Topic, Subscription}, State) ->
+    update_topic_consumer_index(Topic, Subscription, ConsumerPid, true),
     {noreply, State};
-handle_info({consumer_down, ConsumerPid, Topic}, State) ->
-    update_topic_consumer_index(Topic, ConsumerPid, false),
+handle_info({consumer_down, ConsumerPid, Topic, Subscription}, State) ->
+    update_topic_consumer_index(Topic, Subscription, ConsumerPid, false),
     {noreply, State};
 handle_info(Info, State) ->
     error_logger:warning_msg("Unexpected message: ~p", [Info]),
@@ -129,12 +136,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-update_topic_consumer_index(Topic, ConsumerPid, Insert) ->
+update_topic_consumer_index(Topic, Subscription, ConsumerPid, Insert) ->
     Topic2 = topic_utils:to_string(Topic),
     if Insert ->
-           ets:insert(pulserl_consumers, {Topic2, ConsumerPid});
+           ets:insert(pulserl_consumers, {{Topic2, Subscription}, ConsumerPid});
        true ->
-           ets:delete_object(pulserl_consumers, {Topic2, ConsumerPid})
+           ets:delete_object(pulserl_consumers, {{Topic2, Subscription}, ConsumerPid})
     end.
 
 update_topic_producer_index(Topic, ProducerPid, Insert) ->

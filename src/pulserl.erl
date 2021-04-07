@@ -13,13 +13,13 @@
 %% API
 -export([await/1, await/2]).
 -export([start_client/1, start_client/2]).
--export([start_consumer/1, start_consumer/2]).
+-export([start_consumer/2, start_consumer/3]).
 -export([start_producer/1, start_producer/2]).
 -export([produce/2, produce/3, sync_produce/2, sync_produce/3]).
--export([ack/1, ack/2, c_ack/1, c_ack/2, consume/1, nack/1, nack/2]).
+-export([ack/1, ack/2, c_ack/1, c_ack/2, consume/2, nack/1, nack/2]).
 -export([ack_cumulative/1, ack_cumulative/2, negative_ack/1, negative_ack/2]).
 %% Expose for demo purposes
--export([start_consumption_in_background/1]).
+-export([start_consumption_in_background/2]).
 
 %%--------------------------------------------------------------
 %% @doc Starts the pulserl client.
@@ -38,18 +38,18 @@ start_client(ServiceUrl, ClientConfig) ->
 %% @doc Starts a consumer using the specified topic
 %% and default options
 %% -------------------------------------------------------------
-start_consumer(Topic) ->
+start_consumer(Topic, Subscription) ->
     Options = pulserl_app:def_consumer_options(),
-    start_consumer(Topic, Options).
+    start_consumer(Topic, Subscription, Options).
 
 %%-----------------------------------------------------------------
 %% @doc Starts a consumer using the specified topic and options
 %% ----------------------------------------------------------------
 -spec start_consumer(Topic :: topic(), Options :: producer_options()) ->
                         {ok, pid()} | {error, term()}.
-start_consumer(Topic, Options) ->
+start_consumer(Topic, Subscription, Options) ->
     Topic2 = topic_utils:parse(Topic),
-    pulserl_consumer:create(Topic2, Options).
+    pulserl_consumer:create(Topic2, Subscription, Options).
 
 %%--------------------------------------------------------------
 %% @doc Starts a producer using the specified topic
@@ -155,13 +155,13 @@ sync_produce(PidOrTopic, #prodMessage{} = Msg, Timeout)
 %% consumer created for the specified topic; if none is found, one is created and
 %% register for future calls
 %%-------------------------------------------------------------------------------
-consume(PidOrTopic) ->
+consume(PidOrTopic, Subscription) ->
     if is_pid(PidOrTopic) ->
            pulserl_consumer:receive_message(PidOrTopic);
        true ->
-           case pulserl_instance_registry:get_consumer(PidOrTopic, []) of
+           case pulserl_instance_registry:get_consumer(PidOrTopic, Subscription, []) of
                {ok, Pid} ->
-                   consume(Pid);
+                   consume(Pid, Subscription);
                Other ->
                    Other
            end
@@ -221,11 +221,11 @@ await(Tag, Timeout) ->
     end.
 
 %%% public only for demo purpose
-start_consumption_in_background(TopicOrPid) ->
-    spawn(fun() -> do_consume(TopicOrPid) end).
+start_consumption_in_background(TopicOrPid, Subscription) ->
+    spawn(fun() -> do_consume(TopicOrPid, Subscription) end).
 
-do_consume(PidOrTopic) ->
-    case consume(PidOrTopic) of
+do_consume(PidOrTopic, Subscription) ->
+    case consume(PidOrTopic, Subscription) of
         #consMessage{id = Id, value = Value} = ConsumedMsg ->
             _ = ack(ConsumedMsg),
             io:format("Consumer Received: ~p. Id(~p)~n", [Value, Id]);
@@ -237,4 +237,4 @@ do_consume(PidOrTopic) ->
             timer:sleep(10),
             ok
     end,
-    do_consume(PidOrTopic).
+    do_consume(PidOrTopic, Subscription).
