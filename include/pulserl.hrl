@@ -54,5 +54,5 @@
 -type key() :: string() | binary().
 -type value() :: string() | binary().
 -type topic() :: string() | binary() | #topic{}.
--type producer_options() :: [{atom(), term()}, ...].
+-type options() :: [{atom(), term()}, ...].
 -type properties() :: map() | [{key(), value()}, ...].

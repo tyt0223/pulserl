@@ -45,7 +45,7 @@ start_consumer(Topic, Subscription) ->
 %%-----------------------------------------------------------------
 %% @doc Starts a consumer using the specified topic and options
 %% ----------------------------------------------------------------
--spec start_consumer(Topic :: topic(), Options :: producer_options()) ->
+-spec start_consumer(Topic :: topic(), Options :: options()) ->
                         {ok, pid()} | {error, term()}.
 start_consumer(Topic, Subscription, Options) ->
     Topic2 = topic_utils:parse(Topic),
@@ -62,7 +62,7 @@ start_producer(Topic) ->
 %%-----------------------------------------------------------------
 %% @doc Starts a producer using the specified topic and options
 %% ----------------------------------------------------------------
--spec start_producer(Topic :: topic(), Options :: producer_options()) ->
+-spec start_producer(Topic :: topic(), Options :: options()) ->
                         {ok, pid()} | {error, term()}.
 start_producer(Topic, Options) ->
     Topic2 = topic_utils:parse(Topic),
