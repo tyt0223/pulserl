@@ -61,7 +61,7 @@ batch_test(_Config) ->
     Batches =
         lists:map(fun(_) ->
                      case pulserl:consume("test-topic", "test-sup") of
-                         #consMessage{id = Id} ->
+                         #consumerMessage{id = Id} ->
                              Id#messageId.batch;
                          _ ->
                              ?UNDEF
@@ -79,7 +79,7 @@ produce_after(Topic, Message, Seconds) ->
 
 do_receive_message(Pid, Message) ->
     case pulserl_consumer:receive_message(Pid) of
-        #consMessage{value = Message} = ConsumerMsg ->
+        #consumerMessage{payload = Message} = ConsumerMsg ->
             _ = pulserl:ack(ConsumerMsg);
         {error, _} = Error ->
             error(Error);

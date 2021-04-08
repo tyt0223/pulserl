@@ -19,7 +19,7 @@
          code_change/3]).
 %% Producer API
 -export([create/2, close/1, close/2, send/3, sync_send/3]).
--export([new_message/1, new_message/2, new_message/3, new_message/4, new_message/5]).
+-export([new_message/1, new_message/2, new_message/3, new_message/4]).
 
 -define(STATE_READY, ready).
 -define(CALL_TIMEOUT, 180000).
@@ -37,53 +37,45 @@
 %%--------------------------------------------------------------------
 %% @doc Creates a new message to produce
 %%--------------------------------------------------------------------
-new_message(Value) ->
-    new_message(?UNDEF, Value).
+new_message(Payload) ->
+    new_message(?UNDEF, Payload).
 
 %%--------------------------------------------------------------------
 %% @doc Creates a new message to produce
 %%--------------------------------------------------------------------
-new_message(Key, Value) ->
-    new_message(Key, Value, ?UNDEF).
+new_message(PartitionKey, Payload) ->
+    new_message(PartitionKey, Payload, ?UNDEF).
 
 %%--------------------------------------------------------------------
 %% @doc Creates a new message to produce
 %%--------------------------------------------------------------------
-new_message(Key, Value, Properties) ->
-    new_message(Key, Value, Properties, erlwater_time:milliseconds()).
+new_message(PartitionKey, Payload, Properties) ->
+    new_message(PartitionKey, Payload, Properties, ?UNDEF).
 
 %%--------------------------------------------------------------------
 %% @doc Creates a new message to produce
 %%--------------------------------------------------------------------
-new_message(Key, Value, Properties, EventTime) ->
-    new_message(Key, Value, Properties, EventTime, ?UNDEF).
-
-%%--------------------------------------------------------------------
-%% @doc Creates a new message to produce
-%%--------------------------------------------------------------------
--spec new_message(Key :: key() | undefined,
-                  Value :: value(),
+-spec new_message(PartitionKey :: key() | undefined,
+                  Payload :: value(),
                   Properties :: properties(),
-                  EventTime :: integer() | undefined,
                   DeliverAtTime :: integer() | undefined) ->
-                     ok | reference().
-new_message(Key, Value, Properties, EventTime, DeliverAtTime) ->
-    #prodMessage{key =
-                     case Key of
-                         ?UNDEF ->
-                             ?UNDEF;
-                         _ ->
-                             erlwater:to_binary(Key)
-                     end,
-                 value = erlwater:to_binary(Value),
-                 event_time = erlwater:to_integer(EventTime),
-                 deliverAtTime = DeliverAtTime,
-                 properties = Properties}.
+                     #producerMessage{}.
+new_message(PartitionKey, Payload, Properties, DeliverAtTime) ->
+    #producerMessage{partition_key =
+                         case PartitionKey of
+                             ?UNDEF ->
+                                 ?UNDEF;
+                             _ ->
+                                 erlwater:to_binary(PartitionKey)
+                         end,
+                     payload = erlwater:to_binary(Payload),
+                     properties = Properties,
+                     deliver_at_time = DeliverAtTime}.
 
 %%--------------------------------------------------------------------
 %% @doc Send a message asynchronously
 %%--------------------------------------------------------------------
-send(Pid, #prodMessage{} = Message, Callback)
+send(Pid, #producerMessage{} = Message, Callback)
     when is_pid(Pid) andalso (is_function(Callback) orelse Callback == ?UNDEF) ->
     {CallerFun, CallReturn} =
         if is_function(Callback) ->
@@ -116,10 +108,10 @@ send(Pid, #prodMessage{} = Message, Callback)
 %% @doc Send a message synchronously
 %%--------------------------------------------------------------------
 -spec sync_send(Pid :: pid(),
-                Message :: #prodMessage{},
+                Message :: #producerMessage{},
                 Timeout :: '?UNDEF' | pos_integer()) ->
                    #messageId{} | {error, Reason :: term()}.
-sync_send(Pid, #prodMessage{} = Message, Timeout)
+sync_send(Pid, #producerMessage{} = Message, Timeout)
     when is_pid(Pid) andalso (is_integer(Timeout) orelse Timeout == ?UNDEF) ->
     ClientRef = erlang:make_ref(),
     MonitorRef = erlang:monitor(process, Pid),
@@ -235,7 +227,7 @@ handle_call(_, _From, #state{state = ?UNDEF} = State) ->
     %% I'm not ready yet
     {reply, ?ERROR_PRODUCER_UNREADY, State};
 %% The parent
-handle_call({send_message, _ClientFrom, #prodMessage{key = Key}},
+handle_call({send_message, _ClientFrom, #producerMessage{partition_key = PartitionKey}},
             _From,
             #state{partition_count = PartitionCount} = State)
     when PartitionCount > 0 ->
@@ -243,7 +235,7 @@ handle_call({send_message, _ClientFrom, #prodMessage{key = Key}},
     %% We choose the child producer and redirect
     %% the client to it.
     {Replay, State3} =
-        case choose_partition_producer(Key, State) of
+        case choose_partition_producer(PartitionKey, State) of
             {{ok, Pid}, State2} ->
                 {{redirect, Pid}, State2};
             {_, State2} ->
@@ -433,7 +425,7 @@ choose_partition_producer(Key, #state{partition_count = PartitionCount} = State)
 
 send_message(Message, From, State) ->
     Request = {From, Message},
-    if State#state.batch_enable andalso Message#prodMessage.deliverAtTime == ?UNDEF ->
+    if State#state.batch_enable andalso Message#producerMessage.deliver_at_time == ?UNDEF ->
            case add_request_to_batch(Request, State) of
                {notfull, NewRequestQueue} ->
                    %% Was added but still the `pending_requests` has some space.
@@ -511,17 +503,17 @@ resend_messages(#state{topic = Topic,
            State
     end.
 
-send_message({_, #prodMessage{value = Payload} = Msg} = Request,
+send_message({_, #producerMessage{payload = Payload} = Msg} = Request,
              #state{sequence_id = SeqId} = State) ->
     {SendCmd, Metadata} =
         commands:new_send(State#state.producer_id,
                           State#state.producer_name,
                           SeqId,
-                          Msg#prodMessage.key,
-                          Msg#prodMessage.event_time,
+                          Msg#producerMessage.partition_key,
+                          Msg#producerMessage.event_time,
                           %% `num_messages_in_batch` must be undefined for non-batch messages
                           ?UNDEF,
-                          Msg#prodMessage.deliverAtTime,
+                          Msg#producerMessage.deliver_at_time,
                           Payload),
     do_send_message(SeqId, [Request], SendCmd, Metadata, Payload, State).
 
@@ -552,14 +544,16 @@ send_batch_messages(RequestsToBatch,
                         State) ->
     {FinalSeqId, BatchPayload2} =
         lists:foldl(fun({_, Msg}, {SeqId0, BatchPayload0}) ->
-                       Payload = Msg#prodMessage.value,
+                       Payload = Msg#producerMessage.payload,
                        SingleMsgMeta =
                            #'SingleMessageMetadata'{sequence_id = SeqId0,
                                                     payload_size = byte_size(Payload),
-                                                    partition_key = Msg#prodMessage.key,
-                                                    event_time = Msg#prodMessage.event_time,
+                                                    partition_key =
+                                                        Msg#producerMessage.partition_key,
+                                                    ordering_key = Msg#producerMessage.ordering_key,
+                                                    event_time = Msg#producerMessage.event_time,
                                                     properties =
-                                                        commands:to_con_prod_metadata(Msg#prodMessage.properties)},
+                                                        commands:to_con_prod_metadata(Msg#producerMessage.properties)},
                        SerializedSingleMsgMeta = pulsar_api:encode_msg(SingleMsgMeta),
                        SerializedSingleMsgMetaSize = byte_size(SerializedSingleMsgMeta),
                        BatchPayload1 =
@@ -578,7 +572,7 @@ send_batch_messages(RequestsToBatch,
                           ProducerName,
                           SeqId,
                           ?UNDEF,
-                          FirstMsg#prodMessage.event_time,
+                          FirstMsg#producerMessage.event_time,
                           SizeOfBatch,
                           ?UNDEF,
                           BatchPayload2),

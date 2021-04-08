@@ -71,7 +71,7 @@ start_producer(Topic, Options) ->
 %%--------------------------------------------------------------------
 %% @doc publish a message asynchronously
 %%--------------------------------------------------------------------
-produce(PidOrTopic, Value) when not is_record(Value, prodMessage) ->
+produce(PidOrTopic, Value) when not is_record(Value, producerMessage) ->
     produce(PidOrTopic, pulserl_producer:new_message(Value), ?UNDEF);
 %%--------------------------------------------------------------------
 %% @doc publish a message asynchronously
@@ -99,7 +99,7 @@ produce(PidOrTopic, Key, Value)
 %% producer created for the specified topic; if none is found, one is created and
 %% register for future calls
 %%-------------------------------------------------------------------------------
-produce(PidOrTopic, #prodMessage{} = Msg, Callback)
+produce(PidOrTopic, #producerMessage{} = Msg, Callback)
     when is_function(Callback) orelse Callback == ?UNDEF ->
     if is_pid(PidOrTopic) ->
            pulserl_producer:send(PidOrTopic, Msg, Callback);
@@ -120,7 +120,7 @@ sync_produce(PidOrTopic, Value) when is_list(Value) orelse is_binary(Value) ->
 %%--------------------------------------------------------------------
 %% @doc publish a message synchronously
 %%--------------------------------------------------------------------
-sync_produce(Pid, #prodMessage{} = Msg) ->
+sync_produce(Pid, #producerMessage{} = Msg) ->
     sync_produce(Pid, Msg, ?UNDEF).
 
 %%--------------------------------------------------------------------
@@ -136,7 +136,7 @@ sync_produce(PidOrTopic, Key, Value)
 %% producer created for the specified topic; if none is found, one is created and
 %% register for future calls
 %%-------------------------------------------------------------------------------
-sync_produce(PidOrTopic, #prodMessage{} = Msg, Timeout)
+sync_produce(PidOrTopic, #producerMessage{} = Msg, Timeout)
     when is_integer(Timeout) orelse Timeout == ?UNDEF ->
     if is_pid(PidOrTopic) ->
            pulserl_producer:sync_send(PidOrTopic, Msg, Timeout);
@@ -167,26 +167,26 @@ consume(PidOrTopic, Subscription) ->
            end
     end.
 
-ack(#consMessage{consumer = Pid, id = Id}) ->
+ack(#consumerMessage{consumer = Pid, id = Id}) ->
     pulserl:ack(Pid, Id).
 
 ack(Pid, #messageId{} = Id) when is_pid(Pid) ->
     pulserl_consumer:ack(Pid, Id, false).
 
-c_ack(#consMessage{consumer = Pid, id = Id}) ->
+c_ack(#consumerMessage{consumer = Pid, id = Id}) ->
     pulserl:c_ack(Pid, Id).
 
 c_ack(Pid, #messageId{} = Id) when is_pid(Pid) ->
     pulserl_consumer:ack(Pid, Id, true).
 
-nack(#consMessage{consumer = Pid, id = Id}) ->
+nack(#consumerMessage{consumer = Pid, id = Id}) ->
     pulserl:negative_ack(Pid, Id).
 
 nack(Pid, #messageId{} = Id) when is_pid(Pid) ->
     pulserl_consumer:nack(Pid, Id).
 
 %% @deprecated
-ack_cumulative(#consMessage{consumer = Pid, id = Id}) ->
+ack_cumulative(#consumerMessage{consumer = Pid, id = Id}) ->
     pulserl:ack_cumulative(Pid, Id).
 
 %% @deprecated
@@ -194,7 +194,7 @@ ack_cumulative(Pid, #messageId{} = Id) when is_pid(Pid) ->
     pulserl_consumer:ack(Pid, Id, true).
 
 %% @deprecated
-negative_ack(#consMessage{consumer = Pid, id = Id}) ->
+negative_ack(#consumerMessage{consumer = Pid, id = Id}) ->
     pulserl:negative_ack(Pid, Id).
 
 %% @deprecated
@@ -226,9 +226,9 @@ start_consumption_in_background(TopicOrPid, Subscription) ->
 
 do_consume(PidOrTopic, Subscription) ->
     case consume(PidOrTopic, Subscription) of
-        #consMessage{id = Id, value = Value} = ConsumedMsg ->
+        #consumerMessage{id = Id, payload = Payload} = ConsumedMsg ->
             _ = ack(ConsumedMsg),
-            io:format("Consumer Received: ~p. Id(~p)~n", [Value, Id]);
+            io:format("Consumer Received: ~p. Id(~p)~n", [Payload, Id]);
         ?ERROR_CLIENT_NOT_STARTED ->
             error(?ERROR_CLIENT_NOT_STARTED);
         {error, Reason} ->

@@ -43,7 +43,8 @@ all() ->
 
 -spec new_message_test(term()) -> ok.
 new_message_test(_Config) ->
-    #prodMessage{value = <<"test message">>} = pulserl_producer:new_message("test message"),
+    #producerMessage{payload = <<"test message">>} =
+        pulserl_producer:new_message("test message"),
     ok.
 
 -spec send_test(term()) -> ok.

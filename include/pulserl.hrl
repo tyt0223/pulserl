@@ -28,23 +28,24 @@
          topic :: integer() | ?UNDEF,
          partition = -1 :: integer(),
          batch :: #batch{} | ?UNDEF}).
--record(messageMeta,
-        {topic :: binary(),
-         event_time :: integer() | ?UNDEF,
-         redelivery_count = 0 :: integer(),
-         properties = [] :: list()}).
--record(consMessage,
+-record(consumerMessage,
         {id :: #messageId{},
-         metadata :: #messageMeta{},
-         key :: binary() | ?UNDEF,
-         value :: binary(),
+         topic :: binary(),
+         partition_key :: key() | ?UNDEF,
+         ordering_key :: key() | ?UNDEF,
+         event_time :: integer() | ?UNDEF,
+         publish_time :: integer(),
+         properties :: properties() | ?UNDEF,
+         redelivery_count = 0 :: integer(),
+         payload :: payload(),
          consumer :: pid()}).
--record(prodMessage,
-        {key :: string(),
-         event_time = erlwater_time:milliseconds() :: integer(),
-         properties = [] :: map(),
-         value :: binary(),
-         deliverAtTime :: integer() | ?UNDEF}).
+-record(producerMessage,
+        {partition_key :: key() | ?UNDEF,
+         ordering_key :: key() | ?UNDEF,
+         event_time :: integer() | ?UNDEF,
+         properties :: properties() | ?UNDEF,
+         payload :: payload(),
+         deliver_at_time :: integer() | ?UNDEF}).
 -record(clientConfig,
         {socket_options = [] :: list(),
          connect_timeout_ms = 15000 :: pos_integer(),
@@ -53,6 +54,7 @@
 
 -type key() :: string() | binary().
 -type value() :: string() | binary().
+-type payload() :: string() | binary().
 -type topic() :: string() | binary() | #topic{}.
 -type options() :: [{atom(), term()}, ...].
 -type properties() :: map() | [{key(), value()}, ...].

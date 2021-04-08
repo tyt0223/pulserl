@@ -46,7 +46,7 @@ produce_after(Topic, Message, Seconds) ->
 
 do_consume(Topic, Subscription, Message) ->
     case pulserl:consume(Topic, Subscription) of
-        #consMessage{value = Message} = ConsumerMsg ->
+        #consumerMessage{payload = Message} = ConsumerMsg ->
             _ = pulserl:ack(ConsumerMsg);
         {error, _} = Error ->
             error(Error);

@@ -47,20 +47,19 @@ new_message_id(Topic,
                           ?UNDEF
                    end}.
 
-new_message(Topic, MessageId, #'MessageMetadata'{} = Meta, Value, RedeliveryCount) ->
-    #consMessage{id = MessageId,
-                 key = Meta#'MessageMetadata'.partition_key,
-                 value = Value,
-                 metadata =
-                     #messageMeta{topic = topic_utils:to_string(Topic),
-                                  properties = Meta#'MessageMetadata'.properties,
-                                  event_time = Meta#'MessageMetadata'.event_time,
-                                  redelivery_count =
-                                      if is_integer(RedeliveryCount) ->
-                                             RedeliveryCount;
-                                         true ->
-                                             0
-                                      end}}.
+new_message(Topic, MessageId, #'MessageMetadata'{} = Meta, Payload, RedeliveryCount) ->
+    #consumerMessage{id = MessageId,
+                     topic = topic_utils:to_string(Topic),
+                     partition_key = Meta#'MessageMetadata'.partition_key,
+                     payload = Payload,
+                     properties = Meta#'MessageMetadata'.properties,
+                     event_time = Meta#'MessageMetadata'.event_time,
+                     redelivery_count =
+                         if is_integer(RedeliveryCount) ->
+                                RedeliveryCount;
+                            true ->
+                                0
+                         end}.
 
 new_message(Topic,
             MessageId,
@@ -69,22 +68,22 @@ new_message(Topic,
             Value,
             RedeliveryCount) ->
     Message = new_message(Topic, MessageId, Meta, Value, RedeliveryCount),
-    Metadata = Message#consMessage.metadata,
+    % Metadata = Message#consMessage.metadata,
     Message2 =
         case SingleMeta#'SingleMessageMetadata'.partition_key of
             ?UNDEF ->
                 Message;
             PartitionKey ->
-                Message#consMessage{key = PartitionKey}
+                Message#consumerMessage{partition_key = PartitionKey}
         end,
-    Metadata2 =
+    Message3 =
         case SingleMeta#'SingleMessageMetadata'.event_time of
             ?UNDEF ->
-                Metadata;
+                Message2;
             EventTime ->
-                Metadata#messageMeta{event_time = EventTime}
+                Message2#consumerMessage{event_time = EventTime}
         end,
-    Message2#consMessage{metadata = Metadata2}.
+    Message3.
 
 hash(Key, ExclusiveUpperBound) when is_list(Key) ->
     hash(iolist_to_binary(Key), ExclusiveUpperBound);

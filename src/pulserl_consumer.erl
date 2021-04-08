@@ -407,7 +407,7 @@ handle_info({new_message, MsgId, RedeliveryCount, HeadersAndPayload},
                                         end,
                                         {[], LastBatchIndex},
                                         SingleMetaAndPayloads),
-                        [{_, #consMessage{id = IdOfFirstMessage}} | _] = SingleMetaAndMessages,
+                        [{_, #consumerMessage{id = IdOfFirstMessage}} | _] = SingleMetaAndMessages,
                         NewTrackerKey = message_id_2_batch_ack_tracker_key(IdOfFirstMessage),
                         BatchTracker =
                             sets:from_list(
@@ -703,7 +703,8 @@ handle_receive_message(#state{incoming_messages = MessageQueue} = State) ->
     case queue:out(MessageQueue) of
         {{value, Message}, MessageQueue2} ->
             State2 = increase_flow_permits(State#state{incoming_messages = MessageQueue2}, 1),
-            {Message#consMessage{consumer = self()}, track_message(Message#consMessage.id, State2)};
+            {Message#consumerMessage{consumer = self()},
+             track_message(Message#consumerMessage.id, State2)};
         {empty, _} ->
             {false, State}
     end.
@@ -726,7 +727,7 @@ handle_messages(MetadataAndMessages, State) ->
 
 %% @Todo Handle `compacted_out` messages
 add_to_received_message_queue({_, Message}, MessageQueue, State) ->
-    #messageMeta{redelivery_count = RedeliveryCount} = Message#consMessage.metadata,
+    RedeliveryCount = Message#consumerMessage.redelivery_count,
     MaxRedeliveryCount = State#state.dead_letter_topic_max_redeliver_count,
     if MaxRedeliveryCount > 0 andalso RedeliveryCount >= MaxRedeliveryCount ->
            MessageQueue;
@@ -738,9 +739,7 @@ add_to_received_message_queue({_, Message}, MessageQueue, State) ->
 add_to_dead_letter_message_map(_MetadataAndMessage, ?UNDEF, _State) ->
     ?UNDEF;
 add_to_dead_letter_message_map({_,
-                                #consMessage{id = MsgId,
-                                             metadata =
-                                                 #messageMeta{redelivery_count = RedeliveryCount}} =
+                                #consumerMessage{id = MsgId, redelivery_count = RedeliveryCount} =
                                     Msg},
                                DeadLetterMsgMap,
                                State) ->
@@ -817,10 +816,10 @@ do_send_to_dead_letter_topic(Message,
 do_send_to_dead_letter_topic1(Message, State) ->
     DeadLetterTopic = State#state.dead_letter_topic_name,
     ProducerPid = State#state.dead_letter_topic_producer,
-    #consMessage{id = MsgId,
-                 key = Key,
-                 value = Value,
-                 metadata = #messageMeta{properties = Props}} =
+    #consumerMessage{id = MsgId,
+                     partition_key = PartitionKey,
+                     payload = Payload,
+                     properties = Properties} =
         Message,
     error_logger:warning_msg("Giving up processsing of message {legderId=~p"
                              ", entryId=~p, redliveryCount=~p, topic=~s} "
@@ -829,13 +828,13 @@ do_send_to_dead_letter_topic1(Message, State) ->
                              "pid=~p}",
                              [MsgId#messageId.ledger_id,
                               MsgId#messageId.entry_id,
-                              Message#consMessage.metadata#messageMeta.redelivery_count,
+                              Message#consumerMessage.redelivery_count,
                               MsgId#messageId.topic,
                               DeadLetterTopic,
                               topic_utils:to_string(State#state.topic),
                               State#state.consumer_subscription_name,
                               self()]),
-    ProdMessage = pulserl_producer:new_message(Key, Value, Props),
+    ProdMessage = pulserl_producer:new_message(PartitionKey, Payload, Properties),
     case pulserl_producer:sync_send(ProducerPid, ProdMessage, 15000) of
         {error, Reason} = Result ->
             error_logger:error_msg("Error sending to dead letter topic=~s "
@@ -853,7 +852,7 @@ ack_and_clean_dead_letter_message(_, #state{state = ?UNDEF} = State) ->
     State;
 ack_and_clean_dead_letter_message(_, #state{parent_consumer = ?UNDEF} = State) ->
     State;
-ack_and_clean_dead_letter_message(#consMessage{id = MsgId}, State) ->
+ack_and_clean_dead_letter_message(#consumerMessage{id = MsgId}, State) ->
     State2 = untrack_message(MsgId, false, State),
     State3 = remove_from_batch_tracker(MsgId, State2),
     do_send_ack_now(MsgId, false, State3).
