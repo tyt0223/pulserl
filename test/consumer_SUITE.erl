@@ -45,7 +45,8 @@ all() ->
 receive_message_test(_Config) ->
     Message = <<"message">>,
     Topic = topic_utils:parse("test-topic"),
-    {ok, Pid} = pulserl_consumer:create(Topic, []),
+    Subscription = "test-sup",
+    {ok, Pid} = pulserl_consumer:create(Topic, Subscription, []),
     produce_after(Topic, Message, 1),
     do_receive_message(Pid, Message),
     ok.
@@ -59,7 +60,7 @@ batch_test(_Config) ->
     timer:sleep(1000),
     Batches =
         lists:map(fun(_) ->
-                     case pulserl:consume("test-topic") of
+                     case pulserl:consume("test-topic", "test-sup") of
                          #consMessage{id = Id} ->
                              Id#messageId.batch;
                          _ ->
@@ -89,6 +90,8 @@ do_receive_message(Pid, Message) ->
 -spec seek_test(term()) -> ok.
 seek_test(_Config) ->
     Topic = topic_utils:parse("test-topic"),
-    {ok, Pid} = pulserl_consumer:create(Topic, []),
+    Subscription = "test-sup",
+
+    {ok, Pid} = pulserl_consumer:create(Topic, Subscription, []),
     ok = pulserl_consumer:seek(Pid, 2000),
     ok.

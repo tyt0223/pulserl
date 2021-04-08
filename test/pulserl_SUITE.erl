@@ -35,7 +35,7 @@ all() ->
 -spec pulserl_produce_consume_test(term()) -> ok.
 pulserl_produce_consume_test(_Config) ->
     produce_after("test-topic", <<"test message">>, 1),
-    do_consume("test-topic", <<"test message">>),
+    do_consume("test-topic", "test-sub", <<"test message">>),
     ok.
 
 produce_after(Topic, Message, Seconds) ->
@@ -44,12 +44,12 @@ produce_after(Topic, Message, Seconds) ->
              pulserl:produce(Topic, Message)
           end).
 
-do_consume(Topic, Message) ->
-    case pulserl:consume(Topic) of
+do_consume(Topic, Subscription, Message) ->
+    case pulserl:consume(Topic, Subscription) of
         #consMessage{value = Message} = ConsumerMsg ->
             _ = pulserl:ack(ConsumerMsg);
         {error, _} = Error ->
             error(Error);
         _ ->
-            do_consume(Topic, Message)
+            do_consume(Topic, Subscription, Message)
     end.

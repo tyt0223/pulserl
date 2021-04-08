@@ -1265,7 +1265,7 @@ generate_consumer_id(#state{consumer_id = Id}, _Pid) ->
 dead_letter_topic_name(Opts, Topic, SubscriptionName) ->
     case proplists:get_value(dead_letter_topic_name, Opts) of
         ?UNDEF ->
-            io:format("~s-~s-DLQ", [topic_utils:to_string(Topic), SubscriptionName]);
+            iolist_to_binary([topic_utils:to_string(Topic), "-", SubscriptionName, "-DLQ"]);
         Val ->
             Val
     end.
