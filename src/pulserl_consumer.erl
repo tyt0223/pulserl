@@ -358,7 +358,7 @@ handle_cast({close, AttemptRestart}, #state{partition_count = PartitionCount} = 
                                  "is permanelty closing",
                                  [self(), State#state.consumer_subscription_name]),
            State3 = cancel_all_timers(State),
-           {close, normal, close_children(State3)}
+           {stop, normal, close_children(State3)}
     end;
 handle_cast(Request, State) ->
     error_logger:warning_msg("Unexpected Cast: ~p", [Request]),
