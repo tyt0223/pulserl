@@ -20,28 +20,23 @@
 
 -define(SERVER, ?MODULE).
 
-consumer_key(Topic, Subscription) ->
-    io:format("~s:~s", [Topic, Subscription]).
-
 get_consumer(Topic, Subscription, Options) ->
     Topic2 = topic_utils:parse(Topic),
-    case ets:lookup(pulserl_consumers,
-                    consumer_key(topic_utils:to_string(Topic2), Subscription))
-    of
+    case ets:lookup(pulserl_consumers, {Topic2, Subscription}) of
         [] ->
-            gen_server:call(?SERVER, {new_consumer, Topic2, Options}, 32000);
-        Producers ->
-            {_, Pid} = erlwater_collection:random_select(Producers),
+            gen_server:call(?SERVER, {new_consumer, Topic2, Subscription, Options}, 32000);
+        Consumers ->
+            {_, Pid} = erlwater_collection:random_select(Consumers),
             {ok, Pid}
     end.
 
 get_producer(Topic, Options) ->
     Topic2 = topic_utils:parse(Topic),
-    case ets:lookup(pulserl_producers, topic_utils:to_string(Topic2)) of
+    case ets:lookup(pulserl_producers, Topic2) of
         [] ->
             gen_server:call(?SERVER, {new_producer, Topic2, Options}, 32000);
-        Consumers ->
-            {_, Pid} = erlwater_collection:random_select(Consumers),
+        Producers ->
+            {_, Pid} = erlwater_collection:random_select(Producers),
             {ok, Pid}
     end.
 
@@ -54,9 +49,7 @@ init([]) ->
     {ok, #state{}}.
 
 handle_call({new_consumer, Topic, Subscription, Options}, _From, State) ->
-    case ets:lookup(pulserl_consumers,
-                    consumer_key(topic_utils:to_string(Topic), Subscription))
-    of
+    case ets:lookup(pulserl_consumers, {Topic, Subscription}) of
         [] ->
             Reply =
                 case pulserl:start_consumer(Topic, Subscription, Options) of
@@ -85,7 +78,7 @@ handle_call({new_consumer, Topic, Subscription, Options}, _From, State) ->
             {reply, {ok, Pid}, State}
     end;
 handle_call({new_producer, Topic, Options}, _From, State) ->
-    case ets:lookup(pulserl_producers, topic_utils:to_string(Topic)) of
+    case ets:lookup(pulserl_producers, Topic) of
         [] ->
             Reply =
                 case pulserl:start_producer(Topic, Options) of
@@ -137,17 +130,15 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 update_topic_consumer_index(Topic, Subscription, ConsumerPid, Insert) ->
-    Topic2 = topic_utils:to_string(Topic),
     if Insert ->
-           ets:insert(pulserl_consumers, {{Topic2, Subscription}, ConsumerPid});
+           ets:insert(pulserl_consumers, {{Topic, Subscription}, ConsumerPid});
        true ->
-           ets:delete_object(pulserl_consumers, {{Topic2, Subscription}, ConsumerPid})
+           ets:delete_object(pulserl_consumers, {{Topic, Subscription}, ConsumerPid})
     end.
 
 update_topic_producer_index(Topic, ProducerPid, Insert) ->
-    Topic2 = topic_utils:to_string(Topic),
     if Insert ->
-           ets:insert(pulserl_producers, {Topic2, ProducerPid});
+           ets:insert(pulserl_producers, {Topic, ProducerPid});
        true ->
-           ets:delete_object(pulserl_producers, {Topic2, ProducerPid})
+           ets:delete_object(pulserl_producers, {Topic, ProducerPid})
     end.

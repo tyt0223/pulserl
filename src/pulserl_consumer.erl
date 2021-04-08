@@ -16,7 +16,7 @@
 %% gen_Server API
 -export([start_link/3]).
 %% Consumer API
--export([close/1, close/2, create/3]).
+-export([close/1, close/2, create/3, get_partitioned_consumers/1]).
 -export([ack/3, nack/2, negative_ack/2, receive_message/1, redeliver_unack_messages/1,
          seek/2]).
 %% gen_server callbacks
@@ -32,6 +32,7 @@
 -define(EXCLUSIVE_SUBSCRIPTION, exclusive).
 -define(KEY_SHARED_SUBSCRIPTION, key_shared).
 %% Local Messages
+-define(PARTITIONS, partitions).
 -define(REINITIALIZE, reinitialize).
 -define(RECEIVE_MESSAGE, receive_message).
 -define(SEND_ACKNOWLEDGMENTS, send_acknowledgments).
@@ -90,7 +91,7 @@ create(#topic{} = Topic, Subscription, Options) ->
     end.
 
 start_link(#topic{} = Topic, Subscription, Options) ->
-    gen_server:start_link(?MODULE, [Topic, Options], []).
+    gen_server:start_link(?MODULE, [Topic, Subscription, Options], []).
 
 close(Pid) ->
     close(Pid, false).
@@ -110,6 +111,9 @@ receive_from_any([Child | Rest]) ->
 
 send_message_to_dead_letter(Pid, Message) ->
     gen_server:call(Pid, {send_to_dead_letter_topic, Message}).
+
+get_partitioned_consumers(Pid) ->
+    gen_server:call(Pid, ?PARTITIONS).
 
 -define(STATE_READY, ready).
 
@@ -329,6 +333,8 @@ handle_call(redeliver_unack_messages, _From, #state{parent_consumer = Parent} = 
 handle_call({send_to_dead_letter_topic, Message}, _From, State) ->
     {Reply, State2} = do_send_to_dead_letter_topic(Message, State),
     {reply, Reply, State2};
+handle_call(?PARTITIONS, _From, #state{partition_to_child = Partitions} = State) ->
+    {reply, Partitions, State};
 handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
@@ -1083,9 +1089,17 @@ initialize_children(#state{partition_count = Total} = State) ->
 create_child_consumer(Index, State) ->
     create_child_consumer(3, Index, State).
 
-create_child_consumer(Retries, Index, #state{topic = Topic, options = Opts} = State) ->
+create_child_consumer(Retries,
+                      Index,
+                      #state{topic = Topic,
+                             consumer_subscription_name = Subscription,
+                             options = Opts} =
+                          State) ->
     PartitionedTopic = topic_utils:new_partition(Topic, Index),
-    case pulserl_consumer:start_link(PartitionedTopic, [{parent_consumer, self()} | Opts]) of
+    case pulserl_consumer:start_link(PartitionedTopic,
+                                     Subscription,
+                                     [{parent_consumer, self()} | Opts])
+    of
         {ok, Pid} ->
             {Pid,
              State#state{partition_to_child = maps:put(Index, Pid, State#state.partition_to_child),
@@ -1251,7 +1265,7 @@ generate_consumer_id(#state{consumer_id = Id}, _Pid) ->
 dead_letter_topic_name(Opts, Topic, SubscriptionName) ->
     case proplists:get_value(dead_letter_topic_name, Opts) of
         ?UNDEF ->
-            binary_to_list(topic_utils:to_string(Topic)) ++ "-" ++ SubscriptionName ++ "-DLQ";
+            io:format("~s-~s-DLQ", [topic_utils:to_string(Topic), SubscriptionName]);
         Val ->
             Val
     end.
