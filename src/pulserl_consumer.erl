@@ -1210,7 +1210,7 @@ validate_options(Options) when is_list(Options) ->
                           erlwater_assertions:assert(is_integer(Val)
                                                      andalso (Val == 0 orelse Val >= 1000),
                                                      Opt,
-                                                     "acknowledgment_timeout must be >= 10000");
+                                                     "acknowledgment_timeout must be >= 1000");
                       ({nack_message_redelivery_delay, _} = Opt) ->
                           erlwater_assertions:is_non_negative_int(Opt);
                       ({dead_letter_topic_name, _} = Opt) ->

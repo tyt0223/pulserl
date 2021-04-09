@@ -19,7 +19,7 @@
          terminate/2]).
 %% Producer API
 -export([close/1, close/2, create/2, send/3, sync_send/3]).
--export([new_message/2]).
+-export([new_message/1, new_message/2]).
 
 -define(STATE_READY, ready).
 -define(CALL_TIMEOUT, 180000).
@@ -37,15 +37,18 @@
 %%--------------------------------------------------------------------
 %% @doc Creates a new message to produce
 %%--------------------------------------------------------------------
+new_message(Payload) ->
+    new_message(Payload, []).
+
 -spec new_message(Payload :: value(), Options :: list()) -> #producerMessage{}.
 new_message(Payload, Options) ->
     PartitionKey = proplists:get_value(partition_key, Options),
     OrderingKey = proplists:get_value(ordering_key, Options, ?UNDEF),
     EventTime = proplists:get_value(event_time, Options, ?UNDEF),
-    Properties = proplists:get_value(properties, Options, ?UNDEF),
+    Properties = proplists:get_value(properties, Options, []),
     DeliverAtTime = proplists:get_value(deliver_at_time, Options, ?UNDEF),
     Message =
-        #producerMessage{payload = Payload,
+        #producerMessage{payload = erlwater:to_binary(Payload),
                          event_time = EventTime,
                          properties = Properties,
                          deliver_at_time = DeliverAtTime},
@@ -198,7 +201,7 @@ init([#topic{} = Topic, Opts]) ->
     State =
         #state{topic = Topic,
                options = Opts,
-               producer_name = proplists:get_value(name, ProducerOpts),
+               producer_name = proplists:get_value(producer_name, ProducerOpts),
                producer_properties = proplists:get_value(properties, ProducerOpts, []),
                producer_initial_sequence_id =
                    proplists:get_value(initial_sequence_id, ProducerOpts, -1) + 1,
@@ -570,7 +573,7 @@ send_batch_messages(RequestsToBatch,
                           ?UNDEF,
                           ?UNDEF,
                           ?UNDEF,
-                          ?UNDEF,
+                          [],
                           SizeOfBatch,
                           ?UNDEF,
                           BatchPayload2),
@@ -865,7 +868,7 @@ validate_options(Options) when is_list(Options) ->
     lists:foreach(fun ({producer, Options2} = Opt) ->
                           validate_options(Options2),
                           Opt;
-                      ({name, _V} = Opt) ->
+                      ({producer_name, _V} = Opt) ->
                           erlwater_assertions:is_string(Opt);
                       ({properties, _V} = Opt) ->
                           erlwater_assertions:is_proplist(Opt);
