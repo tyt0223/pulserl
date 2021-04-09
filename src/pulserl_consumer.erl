@@ -834,6 +834,7 @@ do_send_to_dead_letter_topic1(Message, State) ->
                               topic_utils:to_string(State#state.topic),
                               State#state.consumer_subscription_name,
                               self()]),
+    %% TODO - yang
     ProdMessage = pulserl_producer:new_message(PartitionKey, Payload, Properties),
     case pulserl_producer:sync_send(ProducerPid, ProdMessage, 15000) of
         {error, Reason} = Result ->

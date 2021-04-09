@@ -242,8 +242,6 @@ handle_call({send_message, ClientFrom, Message},
             _From,
             #state{pending_requests = PendingReqs, max_pending_requests = MaxPendingReqs} =
                 State) ->
-
-              
     case queue:len(PendingReqs) < MaxPendingReqs of
         true ->
             {Reply, State2} = send_message(Message, ClientFrom, State),

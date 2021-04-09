@@ -50,10 +50,22 @@ new_message_id(Topic,
 new_message(Topic, MessageId, #'MessageMetadata'{} = Meta, Payload, RedeliveryCount) ->
     #consumerMessage{id = MessageId,
                      topic = topic_utils:to_string(Topic),
-                     partition_key = Meta#'MessageMetadata'.partition_key,
+                     partition_key =
+                         if Meta#'MessageMetadata'.partition_key == ?UNDEF ->
+                                ?UNDEF;
+                            true ->
+                                erlwater:to_binary(Meta#'MessageMetadata'.partition_key)
+                         end,
+                     ordering_key =
+                         if Meta#'MessageMetadata'.ordering_key == ?UNDEF ->
+                                ?UNDEF;
+                            true ->
+                                erlwater:to_binary(Meta#'MessageMetadata'.ordering_key)
+                         end,
                      payload = Payload,
-                     properties = Meta#'MessageMetadata'.properties,
+                     properties = to_properties_map(Meta#'MessageMetadata'.properties),
                      event_time = Meta#'MessageMetadata'.event_time,
+                     publish_time = Meta#'MessageMetadata'.publish_time,
                      redelivery_count =
                          if is_integer(RedeliveryCount) ->
                                 RedeliveryCount;
@@ -65,25 +77,53 @@ new_message(Topic,
             MessageId,
             #'MessageMetadata'{} = Meta,
             #'SingleMessageMetadata'{} = SingleMeta,
-            Value,
+            Payload,
             RedeliveryCount) ->
-    Message = new_message(Topic, MessageId, Meta, Value, RedeliveryCount),
+    Message = new_message(Topic, MessageId, Meta, Payload, RedeliveryCount),
     % Metadata = Message#consMessage.metadata,
     Message2 =
         case SingleMeta#'SingleMessageMetadata'.partition_key of
             ?UNDEF ->
                 Message;
             PartitionKey ->
-                Message#consumerMessage{partition_key = PartitionKey}
+                Message#consumerMessage{partition_key = erlwater:to_binary(PartitionKey)}
         end,
     Message3 =
-        case SingleMeta#'SingleMessageMetadata'.event_time of
+        case SingleMeta#'SingleMessageMetadata'.ordering_key of
             ?UNDEF ->
                 Message2;
-            EventTime ->
-                Message2#consumerMessage{event_time = EventTime}
+            OrderingKey ->
+                Message2#consumerMessage{ordering_key = erlwater:to_binary(OrderingKey)}
         end,
-    Message3.
+    Message4 =
+        case SingleMeta#'SingleMessageMetadata'.event_time of
+            ?UNDEF ->
+                Message3;
+            EventTime ->
+                Message3#consumerMessage{event_time = EventTime}
+        end,
+    Message5 =
+        case SingleMeta#'SingleMessageMetadata'.properties of
+            ?UNDEF ->
+                Message4;
+            Properties ->
+                Message4#consumerMessage{properties =
+                                             maps:merge(Message4#consumerMessage.properties,
+                                                        to_properties_map(Properties))}
+        end,
+    Message5.
+
+to_properties_map(?UNDEF) ->
+    #{};
+to_properties_map(Properties) when is_map(Properties) ->
+    Properties;
+to_properties_map(Properties) when is_list(Properties) ->
+    lists:foldl(fun({'KeyValue', Key, Val}, Acc) ->
+                   maps:put(
+                       erlwater:to_binary(Key), erlwater:to_binary(Val), Acc)
+                end,
+                #{},
+                Properties).
 
 hash(Key, ExclusiveUpperBound) when is_list(Key) ->
     hash(iolist_to_binary(Key), ExclusiveUpperBound);
