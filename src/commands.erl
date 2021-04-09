@@ -12,7 +12,7 @@
 
 -export([get_request_id/1, set_request_id/2]).
 -export([has_messages_in_batch/1, to_con_prod_metadata/1]).
--export([new_ack/2, new_ack/3, new_connect/0, new_seek/2, new_send/8]).
+-export([new_ack/2, new_ack/3, new_connect/0, new_seek/2, new_send/10]).
 -export([new_lookup_topic/2, new_partitioned_topic_meta/1,
          new_redeliver_unack_messages/2]).
 
@@ -41,7 +41,9 @@ new_send(ProducerId,
          ProducerName,
          SequenceId,
          PartitionKey,
+         OrderingKey,
          EventTime,
+         Properties,
          NumMessages,
          DeliverAtTime,
          Payload) ->
@@ -51,6 +53,8 @@ new_send(ProducerId,
                            sequence_id = SequenceId,
                            producer_name = ProducerName,
                            partition_key = PartitionKey,
+                           ordering_key = OrderingKey,
+                           properties = Properties,
                            deliver_at_time = DeliverAtTime,
                            uncompressed_size = byte_size(Payload),
                            publish_time = erlwater_time:milliseconds(),

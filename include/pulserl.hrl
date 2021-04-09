@@ -35,7 +35,7 @@
          ordering_key :: key() | ?UNDEF,
          event_time :: integer() | ?UNDEF,
          publish_time :: integer(),
-         properties :: properties() | ?UNDEF,
+         properties =#{}:: properties(),
          redelivery_count = 0 :: integer(),
          payload :: payload(),
          consumer :: pid()}).
@@ -43,7 +43,7 @@
         {partition_key :: key() | ?UNDEF,
          ordering_key :: key() | ?UNDEF,
          event_time :: integer() | ?UNDEF,
-         properties :: properties() | ?UNDEF,
+         properties = []:: properties(),
          payload :: payload(),
          deliver_at_time :: integer() | ?UNDEF}).
 -record(clientConfig,

@@ -15,11 +15,11 @@
 %% gen_Server API
 -export([start_link/2]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
-         code_change/3]).
+-export([code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
+         terminate/2]).
 %% Producer API
--export([create/2, close/1, close/2, send/3, sync_send/3]).
--export([new_message/1, new_message/2, new_message/3, new_message/4]).
+-export([close/1, close/2, create/2, send/3, sync_send/3]).
+-export([new_message/2]).
 
 -define(STATE_READY, ready).
 -define(CALL_TIMEOUT, 180000).
@@ -37,40 +37,35 @@
 %%--------------------------------------------------------------------
 %% @doc Creates a new message to produce
 %%--------------------------------------------------------------------
-new_message(Payload) ->
-    new_message(?UNDEF, Payload).
-
-%%--------------------------------------------------------------------
-%% @doc Creates a new message to produce
-%%--------------------------------------------------------------------
-new_message(PartitionKey, Payload) ->
-    new_message(PartitionKey, Payload, ?UNDEF).
-
-%%--------------------------------------------------------------------
-%% @doc Creates a new message to produce
-%%--------------------------------------------------------------------
-new_message(PartitionKey, Payload, Properties) ->
-    new_message(PartitionKey, Payload, Properties, ?UNDEF).
-
-%%--------------------------------------------------------------------
-%% @doc Creates a new message to produce
-%%--------------------------------------------------------------------
--spec new_message(PartitionKey :: key() | undefined,
-                  Payload :: value(),
-                  Properties :: properties(),
-                  DeliverAtTime :: integer() | undefined) ->
-                     #producerMessage{}.
-new_message(PartitionKey, Payload, Properties, DeliverAtTime) ->
-    #producerMessage{partition_key =
-                         case PartitionKey of
-                             ?UNDEF ->
-                                 ?UNDEF;
-                             _ ->
-                                 erlwater:to_binary(PartitionKey)
-                         end,
-                     payload = erlwater:to_binary(Payload),
-                     properties = Properties,
-                     deliver_at_time = DeliverAtTime}.
+-spec new_message(Payload :: value(), Options :: list()) -> #producerMessage{}.
+new_message(Payload, Options) ->
+    PartitionKey = proplists:get_value(partition_key, Options),
+    OrderingKey = proplists:get_value(ordering_key, Options, ?UNDEF),
+    EventTime = proplists:get_value(event_time, Options, ?UNDEF),
+    Properties = proplists:get_value(properties, Options, ?UNDEF),
+    DeliverAtTime = proplists:get_value(deliver_at_time, Options, ?UNDEF),
+    Message =
+        #producerMessage{payload = Payload,
+                         event_time = EventTime,
+                         properties = Properties,
+                         deliver_at_time = DeliverAtTime},
+    Message2 =
+        Message#producerMessage{partition_key =
+                                    case PartitionKey of
+                                        ?UNDEF ->
+                                            ?UNDEF;
+                                        _ ->
+                                            erlwater:to_binary(PartitionKey)
+                                    end},
+    Message3 =
+        Message2#producerMessage{ordering_key =
+                                     case OrderingKey of
+                                         ?UNDEF ->
+                                             ?UNDEF;
+                                         _ ->
+                                             erlwater:to_binary(OrderingKey)
+                                     end},
+    Message3.
 
 %%--------------------------------------------------------------------
 %% @doc Send a message asynchronously
@@ -247,6 +242,8 @@ handle_call({send_message, ClientFrom, Message},
             _From,
             #state{pending_requests = PendingReqs, max_pending_requests = MaxPendingReqs} =
                 State) ->
+
+              
     case queue:len(PendingReqs) < MaxPendingReqs of
         true ->
             {Reply, State2} = send_message(Message, ClientFrom, State),
@@ -271,7 +268,7 @@ handle_cast({close, AttemptRestart}, State) ->
             error_logger:info_msg("Producer(~p) at: ~p is permanelty closing",
                                   [self(), topic_utils:to_string(State#state.topic)]),
             State2 = send_reply_to_all_waiters(?ERROR_PRODUCER_CLOSED, State),
-            {close, normal, close_children(State2, AttemptRestart)}
+            {stop, normal, close_children(State2, AttemptRestart)}
     end;
 handle_cast(Request, State) ->
     error_logger:warning_msg("Unexpected Cast: ~p", [Request]),
@@ -384,7 +381,7 @@ choose_partition_producer(Key, #state{partition_count = PartitionCount} = State)
     {Partition, State2} =
         case State#state.partition_routing_mode of
             {M, F} ->
-                case catch erlang:apply(M, F, [Key, PartitionCount]) of
+                case catch M:F(Key, PartitionCount) of
                     Int when is_integer(Int) andalso Int >= 0 andalso Int < PartitionCount ->
                         {Int, State};
                     Other ->
@@ -510,7 +507,9 @@ send_message({_, #producerMessage{payload = Payload} = Msg} = Request,
                           State#state.producer_name,
                           SeqId,
                           Msg#producerMessage.partition_key,
+                          Msg#producerMessage.ordering_key,
                           Msg#producerMessage.event_time,
+                          commands:to_con_prod_metadata(Msg#producerMessage.properties),
                           %% `num_messages_in_batch` must be undefined for non-batch messages
                           ?UNDEF,
                           Msg#producerMessage.deliver_at_time,
@@ -565,14 +564,15 @@ send_batch_messages(RequestsToBatch,
                     end,
                     {SeqId, <<>>},
                     RequestsToBatch),
-    [{_, FirstMsg} | _] = RequestsToBatch,
     SizeOfBatch = length(RequestsToBatch),
     {SendCmd, Metadata} =
         commands:new_send(ProducerId,
                           ProducerName,
                           SeqId,
                           ?UNDEF,
-                          FirstMsg#producerMessage.event_time,
+                          ?UNDEF,
+                          ?UNDEF,
+                          ?UNDEF,
                           SizeOfBatch,
                           ?UNDEF,
                           BatchPayload2),
@@ -602,7 +602,7 @@ send_replies_to_waiters(Reply, Waiters, State) ->
                              {Pid, Tag} ->
                                  Pid ! {Tag, Reply};
                              Fun when is_function(Fun) ->
-                                 apply(Fun, [Reply])
+                                 Fun(Reply)
                          end
                      catch
                          _:Reason ->
