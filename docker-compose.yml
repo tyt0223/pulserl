@@ -3,7 +3,7 @@ version: '3.2'
 services:
 
   pulsar:
-    image: apachepulsar/pulsar:2.5.2
+    image: apachepulsar/pulsar:2.7.1
     ports:
       - "6650:6650"
       - "6651:6651"
@@ -23,7 +23,7 @@ services:
       - tlsCertificateFilePath=/pulsar/certs/broker.cert.pem
       - tlsKeyFilePath=/pulsar/certs/broker.key-pk8.pem
       - tlsTrustCertsFilePath=/pulsar/certs/ca.cert.pem
-      - PULSAR_MEM=" -Xms512m -Xmx512m -XX:MaxDirectMemorySize=1g"
+      - PULSAR_MEM=-Xms512m -Xmx512m -XX:MaxDirectMemorySize=1g
     command: >
       /bin/bash -c
       "bin/apply-config-from-env.py ../../pulsar/conf/standalone.conf

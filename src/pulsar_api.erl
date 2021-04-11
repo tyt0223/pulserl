@@ -68,8 +68,7 @@
 -export([gpb_version_as_string/0, gpb_version_as_list/0]).
 
 -include("pulsar_api.hrl").
-
--include_lib("gpb/include/gpb.hrl").
+-include("gpb.hrl").
 
 %% enumerated types
 -type 'Schema.Type'() ::
@@ -88,7 +87,12 @@
     'Date' |
     'Time' |
     'Timestamp' |
-    'KeyValue'.
+    'KeyValue' |
+    'Instant' |
+    'LocalDate' |
+    'LocalTime' |
+    'LocalDateTime' |
+    'ProtobufNative'.
 -type 'CompressionType'() :: 'NONE' | 'LZ4' | 'ZLIB' | 'ZSTD' | 'SNAPPY'.
 -type 'ServerError'() ::
     'UnknownError' |
@@ -112,7 +116,10 @@
     'IncompatibleSchema' |
     'ConsumerAssignError' |
     'TransactionCoordinatorNotFound' |
-    'InvalidTxnStatus'.
+    'InvalidTxnStatus' |
+    'NotAllowedError' |
+    'TransactionConflict' |
+    'TransactionNotFound'.
 -type 'AuthMethod'() :: 'AuthMethodNone' | 'AuthMethodYcaV1' | 'AuthMethodAthens'.
 -type 'ProtocolVersion'() ::
     v0 | v1 | v2 | v3 | v4 | v5 | v6 | v7 | v8 | v9 | v10 | v11 | v12 | v13 | v14 | v15.
@@ -513,7 +520,8 @@ encode_msg_MessageIdData(#'MessageIdData'{ledgerId = F1,
                                           entryId = F2,
                                           partition = F3,
                                           batch_index = F4,
-                                          ack_set = F5},
+                                          ack_set = F5,
+                                          batch_size = F6},
                          Bin,
                          TrUserData) ->
     B1 = begin
@@ -540,13 +548,21 @@ encode_msg_MessageIdData(#'MessageIdData'{ledgerId = F1,
                     e_type_int32(TrF4, <<B3/binary, 32>>, TrUserData)
                 end
          end,
-    begin
-        TrF5 = id(F5, TrUserData),
-        if TrF5 == [] ->
-               B4;
-           true ->
-               e_field_MessageIdData_ack_set(TrF5, B4, TrUserData)
-        end
+    B5 = begin
+             TrF5 = id(F5, TrUserData),
+             if TrF5 == [] ->
+                    B4;
+                true ->
+                    e_field_MessageIdData_ack_set(TrF5, B4, TrUserData)
+             end
+         end,
+    if F6 == undefined ->
+           B5;
+       true ->
+           begin
+               TrF6 = id(F6, TrUserData),
+               e_type_int32(TrF6, <<B5/binary, 48>>, TrUserData)
+           end
     end.
 
 encode_msg_KeyValue(Msg, TrUserData) ->
@@ -1825,7 +1841,8 @@ encode_msg_CommandAck(#'CommandAck'{consumer_id = F1,
                                     validation_error = F4,
                                     properties = F5,
                                     txnid_least_bits = F6,
-                                    txnid_most_bits = F7},
+                                    txnid_most_bits = F7,
+                                    request_id = F8},
                       Bin,
                       TrUserData) ->
     B1 = begin
@@ -1868,12 +1885,20 @@ encode_msg_CommandAck(#'CommandAck'{consumer_id = F1,
                     e_varint(TrF6, <<B5/binary, 48>>, TrUserData)
                 end
          end,
-    if F7 == undefined ->
-           B6;
+    B7 = if F7 == undefined ->
+                B6;
+            true ->
+                begin
+                    TrF7 = id(F7, TrUserData),
+                    e_varint(TrF7, <<B6/binary, 56>>, TrUserData)
+                end
+         end,
+    if F8 == undefined ->
+           B7;
        true ->
            begin
-               TrF7 = id(F7, TrUserData),
-               e_varint(TrF7, <<B6/binary, 56>>, TrUserData)
+               TrF8 = id(F8, TrUserData),
+               e_varint(TrF8, <<B7/binary, 64>>, TrUserData)
            end
     end.
 
@@ -1884,7 +1909,8 @@ encode_msg_CommandAckResponse(#'CommandAckResponse'{consumer_id = F1,
                                                     txnid_least_bits = F2,
                                                     txnid_most_bits = F3,
                                                     error = F4,
-                                                    message = F5},
+                                                    message = F5,
+                                                    request_id = F6},
                               Bin,
                               TrUserData) ->
     B1 = begin
@@ -1915,12 +1941,20 @@ encode_msg_CommandAckResponse(#'CommandAckResponse'{consumer_id = F1,
                     e_enum_ServerError(TrF4, <<B3/binary, 32>>, TrUserData)
                 end
          end,
-    if F5 == undefined ->
-           B4;
+    B5 = if F5 == undefined ->
+                B4;
+            true ->
+                begin
+                    TrF5 = id(F5, TrUserData),
+                    e_type_string(TrF5, <<B4/binary, 42>>, TrUserData)
+                end
+         end,
+    if F6 == undefined ->
+           B5;
        true ->
            begin
-               TrF5 = id(F5, TrUserData),
-               e_type_string(TrF5, <<B4/binary, 42>>, TrUserData)
+               TrF6 = id(F6, TrUserData),
+               e_varint(TrF6, <<B5/binary, 48>>, TrUserData)
            end
     end.
 
@@ -2330,7 +2364,9 @@ encode_msg_CommandGetLastMessageIdResponse(Msg, TrUserData) ->
 
 encode_msg_CommandGetLastMessageIdResponse(#'CommandGetLastMessageIdResponse'{last_message_id
                                                                                   = F1,
-                                                                              request_id = F2},
+                                                                              request_id = F2,
+                                                                              consumer_mark_delete_position
+                                                                                  = F3},
                                            Bin,
                                            TrUserData) ->
     B1 = begin
@@ -2339,9 +2375,20 @@ encode_msg_CommandGetLastMessageIdResponse(#'CommandGetLastMessageIdResponse'{la
                                                                       <<Bin/binary, 10>>,
                                                                       TrUserData)
          end,
-    begin
-        TrF2 = id(F2, TrUserData),
-        e_varint(TrF2, <<B1/binary, 16>>, TrUserData)
+    B2 = begin
+             TrF2 = id(F2, TrUserData),
+             e_varint(TrF2, <<B1/binary, 16>>, TrUserData)
+         end,
+    if F3 == undefined ->
+           B2;
+       true ->
+           begin
+               TrF3 = id(F3, TrUserData),
+               e_mfield_CommandGetLastMessageIdResponse_consumer_mark_delete_position(TrF3,
+                                                                                      <<B2/binary,
+                                                                                        26>>,
+                                                                                      TrUserData)
+           end
     end.
 
 encode_msg_CommandGetTopicsOfNamespace(Msg, TrUserData) ->
@@ -2796,7 +2843,8 @@ encode_msg_CommandEndTxn(Msg, TrUserData) ->
 encode_msg_CommandEndTxn(#'CommandEndTxn'{request_id = F1,
                                           txnid_least_bits = F2,
                                           txnid_most_bits = F3,
-                                          txn_action = F4},
+                                          txn_action = F4,
+                                          message_id = F5},
                          Bin,
                          TrUserData) ->
     B1 = begin
@@ -2819,13 +2867,21 @@ encode_msg_CommandEndTxn(#'CommandEndTxn'{request_id = F1,
                     e_varint(TrF3, <<B2/binary, 24>>, TrUserData)
                 end
          end,
-    if F4 == undefined ->
-           B3;
-       true ->
-           begin
-               TrF4 = id(F4, TrUserData),
-               e_enum_TxnAction(TrF4, <<B3/binary, 32>>, TrUserData)
-           end
+    B4 = if F4 == undefined ->
+                B3;
+            true ->
+                begin
+                    TrF4 = id(F4, TrUserData),
+                    e_enum_TxnAction(TrF4, <<B3/binary, 32>>, TrUserData)
+                end
+         end,
+    begin
+        TrF5 = id(F5, TrUserData),
+        if TrF5 == [] ->
+               B4;
+           true ->
+               e_field_CommandEndTxn_message_id(TrF5, B4, TrUserData)
+        end
     end.
 
 encode_msg_CommandEndTxnResponse(Msg, TrUserData) ->
@@ -2882,7 +2938,8 @@ encode_msg_CommandEndTxnOnPartition(#'CommandEndTxnOnPartition'{request_id = F1,
                                                                 txnid_least_bits = F2,
                                                                 txnid_most_bits = F3,
                                                                 topic = F4,
-                                                                txn_action = F5},
+                                                                txn_action = F5,
+                                                                message_id = F6},
                                     Bin,
                                     TrUserData) ->
     B1 = begin
@@ -2913,13 +2970,21 @@ encode_msg_CommandEndTxnOnPartition(#'CommandEndTxnOnPartition'{request_id = F1,
                     e_type_string(TrF4, <<B3/binary, 34>>, TrUserData)
                 end
          end,
-    if F5 == undefined ->
-           B4;
-       true ->
-           begin
-               TrF5 = id(F5, TrUserData),
-               e_enum_TxnAction(TrF5, <<B4/binary, 40>>, TrUserData)
-           end
+    B5 = if F5 == undefined ->
+                B4;
+            true ->
+                begin
+                    TrF5 = id(F5, TrUserData),
+                    e_enum_TxnAction(TrF5, <<B4/binary, 40>>, TrUserData)
+                end
+         end,
+    begin
+        TrF6 = id(F6, TrUserData),
+        if TrF6 == [] ->
+               B5;
+           true ->
+               e_field_CommandEndTxnOnPartition_message_id(TrF6, B5, TrUserData)
+        end
     end.
 
 encode_msg_CommandEndTxnOnPartitionResponse(Msg, TrUserData) ->
@@ -3805,6 +3870,13 @@ e_mfield_CommandGetLastMessageIdResponse_last_message_id(Msg, Bin, TrUserData) -
     Bin2 = e_varint(byte_size(SubBin), Bin),
     <<Bin2/binary, SubBin/binary>>.
 
+e_mfield_CommandGetLastMessageIdResponse_consumer_mark_delete_position(Msg,
+                                                                       Bin,
+                                                                       TrUserData) ->
+    SubBin = encode_msg_MessageIdData(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
 e_field_CommandGetTopicsOfNamespaceResponse_topics([Elem | Rest], Bin, TrUserData) ->
     Bin2 = <<Bin/binary, 18>>,
     Bin3 = e_type_string(id(Elem, TrUserData), Bin2, TrUserData),
@@ -3840,6 +3912,31 @@ e_field_CommandAddSubscriptionToTxn_subscription([Elem | Rest], Bin, TrUserData)
         e_mfield_CommandAddSubscriptionToTxn_subscription(id(Elem, TrUserData), Bin2, TrUserData),
     e_field_CommandAddSubscriptionToTxn_subscription(Rest, Bin3, TrUserData);
 e_field_CommandAddSubscriptionToTxn_subscription([], Bin, _TrUserData) ->
+    Bin.
+
+e_mfield_CommandEndTxn_message_id(Msg, Bin, TrUserData) ->
+    SubBin = encode_msg_MessageIdData(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
+e_field_CommandEndTxn_message_id([Elem | Rest], Bin, TrUserData) ->
+    Bin2 = <<Bin/binary, 42>>,
+    Bin3 = e_mfield_CommandEndTxn_message_id(id(Elem, TrUserData), Bin2, TrUserData),
+    e_field_CommandEndTxn_message_id(Rest, Bin3, TrUserData);
+e_field_CommandEndTxn_message_id([], Bin, _TrUserData) ->
+    Bin.
+
+e_mfield_CommandEndTxnOnPartition_message_id(Msg, Bin, TrUserData) ->
+    SubBin = encode_msg_MessageIdData(Msg, <<>>, TrUserData),
+    Bin2 = e_varint(byte_size(SubBin), Bin),
+    <<Bin2/binary, SubBin/binary>>.
+
+e_field_CommandEndTxnOnPartition_message_id([Elem | Rest], Bin, TrUserData) ->
+    Bin2 = <<Bin/binary, 50>>,
+    Bin3 =
+        e_mfield_CommandEndTxnOnPartition_message_id(id(Elem, TrUserData), Bin2, TrUserData),
+    e_field_CommandEndTxnOnPartition_message_id(Rest, Bin3, TrUserData);
+e_field_CommandEndTxnOnPartition_message_id([], Bin, _TrUserData) ->
     Bin.
 
 e_mfield_CommandEndTxnOnSubscription_subscription(Msg, Bin, TrUserData) ->
@@ -4130,6 +4227,16 @@ e_mfield_BaseCommand_endTxnOnSubscriptionResponse(Msg, Bin, TrUserData) ->
     <<Bin/binary, 14>>;
 'e_enum_Schema.Type'('KeyValue', Bin, _TrUserData) ->
     <<Bin/binary, 15>>;
+'e_enum_Schema.Type'('Instant', Bin, _TrUserData) ->
+    <<Bin/binary, 16>>;
+'e_enum_Schema.Type'('LocalDate', Bin, _TrUserData) ->
+    <<Bin/binary, 17>>;
+'e_enum_Schema.Type'('LocalTime', Bin, _TrUserData) ->
+    <<Bin/binary, 18>>;
+'e_enum_Schema.Type'('LocalDateTime', Bin, _TrUserData) ->
+    <<Bin/binary, 19>>;
+'e_enum_Schema.Type'('ProtobufNative', Bin, _TrUserData) ->
+    <<Bin/binary, 20>>;
 'e_enum_Schema.Type'(V, Bin, _TrUserData) ->
     e_varint(V, Bin).
 
@@ -4190,6 +4297,12 @@ e_enum_ServerError('TransactionCoordinatorNotFound', Bin, _TrUserData) ->
     <<Bin/binary, 20>>;
 e_enum_ServerError('InvalidTxnStatus', Bin, _TrUserData) ->
     <<Bin/binary, 21>>;
+e_enum_ServerError('NotAllowedError', Bin, _TrUserData) ->
+    <<Bin/binary, 22>>;
+e_enum_ServerError('TransactionConflict', Bin, _TrUserData) ->
+    <<Bin/binary, 23>>;
+e_enum_ServerError('TransactionNotFound', Bin, _TrUserData) ->
+    <<Bin/binary, 24>>;
 e_enum_ServerError(V, Bin, _TrUserData) ->
     e_varint(V, Bin).
 
@@ -4912,6 +5025,7 @@ decode_msg_MessageIdData(Bin, TrUserData) ->
                                      id(undefined, TrUserData),
                                      id(undefined, TrUserData),
                                      id([], TrUserData),
+                                     id(undefined, TrUserData),
                                      TrUserData).
 
 dfp_read_field_def_MessageIdData(<<8, Rest/binary>>,
@@ -4922,8 +5036,18 @@ dfp_read_field_def_MessageIdData(<<8, Rest/binary>>,
                                  F@_3,
                                  F@_4,
                                  F@_5,
+                                 F@_6,
                                  TrUserData) ->
-    d_field_MessageIdData_ledgerId(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+    d_field_MessageIdData_ledgerId(Rest,
+                                   Z1,
+                                   Z2,
+                                   F@_1,
+                                   F@_2,
+                                   F@_3,
+                                   F@_4,
+                                   F@_5,
+                                   F@_6,
+                                   TrUserData);
 dfp_read_field_def_MessageIdData(<<16, Rest/binary>>,
                                  Z1,
                                  Z2,
@@ -4932,8 +5056,18 @@ dfp_read_field_def_MessageIdData(<<16, Rest/binary>>,
                                  F@_3,
                                  F@_4,
                                  F@_5,
+                                 F@_6,
                                  TrUserData) ->
-    d_field_MessageIdData_entryId(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+    d_field_MessageIdData_entryId(Rest,
+                                  Z1,
+                                  Z2,
+                                  F@_1,
+                                  F@_2,
+                                  F@_3,
+                                  F@_4,
+                                  F@_5,
+                                  F@_6,
+                                  TrUserData);
 dfp_read_field_def_MessageIdData(<<24, Rest/binary>>,
                                  Z1,
                                  Z2,
@@ -4942,8 +5076,18 @@ dfp_read_field_def_MessageIdData(<<24, Rest/binary>>,
                                  F@_3,
                                  F@_4,
                                  F@_5,
+                                 F@_6,
                                  TrUserData) ->
-    d_field_MessageIdData_partition(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+    d_field_MessageIdData_partition(Rest,
+                                    Z1,
+                                    Z2,
+                                    F@_1,
+                                    F@_2,
+                                    F@_3,
+                                    F@_4,
+                                    F@_5,
+                                    F@_6,
+                                    TrUserData);
 dfp_read_field_def_MessageIdData(<<32, Rest/binary>>,
                                  Z1,
                                  Z2,
@@ -4952,8 +5096,18 @@ dfp_read_field_def_MessageIdData(<<32, Rest/binary>>,
                                  F@_3,
                                  F@_4,
                                  F@_5,
+                                 F@_6,
                                  TrUserData) ->
-    d_field_MessageIdData_batch_index(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+    d_field_MessageIdData_batch_index(Rest,
+                                      Z1,
+                                      Z2,
+                                      F@_1,
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      F@_5,
+                                      F@_6,
+                                      TrUserData);
 dfp_read_field_def_MessageIdData(<<42, Rest/binary>>,
                                  Z1,
                                  Z2,
@@ -4962,8 +5116,18 @@ dfp_read_field_def_MessageIdData(<<42, Rest/binary>>,
                                  F@_3,
                                  F@_4,
                                  F@_5,
+                                 F@_6,
                                  TrUserData) ->
-    d_pfield_MessageIdData_ack_set(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+    d_pfield_MessageIdData_ack_set(Rest,
+                                   Z1,
+                                   Z2,
+                                   F@_1,
+                                   F@_2,
+                                   F@_3,
+                                   F@_4,
+                                   F@_5,
+                                   F@_6,
+                                   TrUserData);
 dfp_read_field_def_MessageIdData(<<40, Rest/binary>>,
                                  Z1,
                                  Z2,
@@ -4972,14 +5136,54 @@ dfp_read_field_def_MessageIdData(<<40, Rest/binary>>,
                                  F@_3,
                                  F@_4,
                                  F@_5,
+                                 F@_6,
                                  TrUserData) ->
-    d_field_MessageIdData_ack_set(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
-dfp_read_field_def_MessageIdData(<<>>, 0, 0, F@_1, F@_2, F@_3, F@_4, R1, TrUserData) ->
+    d_field_MessageIdData_ack_set(Rest,
+                                  Z1,
+                                  Z2,
+                                  F@_1,
+                                  F@_2,
+                                  F@_3,
+                                  F@_4,
+                                  F@_5,
+                                  F@_6,
+                                  TrUserData);
+dfp_read_field_def_MessageIdData(<<48, Rest/binary>>,
+                                 Z1,
+                                 Z2,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 F@_6,
+                                 TrUserData) ->
+    d_field_MessageIdData_batch_size(Rest,
+                                     Z1,
+                                     Z2,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     F@_6,
+                                     TrUserData);
+dfp_read_field_def_MessageIdData(<<>>,
+                                 0,
+                                 0,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 R1,
+                                 F@_6,
+                                 TrUserData) ->
     #'MessageIdData'{ledgerId = F@_1,
                      entryId = F@_2,
                      partition = F@_3,
                      batch_index = F@_4,
-                     ack_set = lists_reverse(R1, TrUserData)};
+                     ack_set = lists_reverse(R1, TrUserData),
+                     batch_size = F@_6};
 dfp_read_field_def_MessageIdData(Other,
                                  Z1,
                                  Z2,
@@ -4988,8 +5192,18 @@ dfp_read_field_def_MessageIdData(Other,
                                  F@_3,
                                  F@_4,
                                  F@_5,
+                                 F@_6,
                                  TrUserData) ->
-    dg_read_field_def_MessageIdData(Other, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
+    dg_read_field_def_MessageIdData(Other,
+                                    Z1,
+                                    Z2,
+                                    F@_1,
+                                    F@_2,
+                                    F@_3,
+                                    F@_4,
+                                    F@_5,
+                                    F@_6,
+                                    TrUserData).
 
 dg_read_field_def_MessageIdData(<<1:1, X:7, Rest/binary>>,
                                 N,
@@ -4999,6 +5213,7 @@ dg_read_field_def_MessageIdData(<<1:1, X:7, Rest/binary>>,
                                 F@_3,
                                 F@_4,
                                 F@_5,
+                                F@_6,
                                 TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_MessageIdData(Rest,
@@ -5009,6 +5224,7 @@ dg_read_field_def_MessageIdData(<<1:1, X:7, Rest/binary>>,
                                     F@_3,
                                     F@_4,
                                     F@_5,
+                                    F@_6,
                                     TrUserData);
 dg_read_field_def_MessageIdData(<<0:1, X:7, Rest/binary>>,
                                 N,
@@ -5018,27 +5234,111 @@ dg_read_field_def_MessageIdData(<<0:1, X:7, Rest/binary>>,
                                 F@_3,
                                 F@_4,
                                 F@_5,
+                                F@_6,
                                 TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
         8 ->
-            d_field_MessageIdData_ledgerId(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+            d_field_MessageIdData_ledgerId(Rest,
+                                           0,
+                                           0,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           F@_5,
+                                           F@_6,
+                                           TrUserData);
         16 ->
-            d_field_MessageIdData_entryId(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+            d_field_MessageIdData_entryId(Rest,
+                                          0,
+                                          0,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          F@_4,
+                                          F@_5,
+                                          F@_6,
+                                          TrUserData);
         24 ->
-            d_field_MessageIdData_partition(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+            d_field_MessageIdData_partition(Rest,
+                                            0,
+                                            0,
+                                            F@_1,
+                                            F@_2,
+                                            F@_3,
+                                            F@_4,
+                                            F@_5,
+                                            F@_6,
+                                            TrUserData);
         32 ->
-            d_field_MessageIdData_batch_index(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+            d_field_MessageIdData_batch_index(Rest,
+                                              0,
+                                              0,
+                                              F@_1,
+                                              F@_2,
+                                              F@_3,
+                                              F@_4,
+                                              F@_5,
+                                              F@_6,
+                                              TrUserData);
         42 ->
-            d_pfield_MessageIdData_ack_set(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+            d_pfield_MessageIdData_ack_set(Rest,
+                                           0,
+                                           0,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           F@_5,
+                                           F@_6,
+                                           TrUserData);
         40 ->
-            d_field_MessageIdData_ack_set(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+            d_field_MessageIdData_ack_set(Rest,
+                                          0,
+                                          0,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          F@_4,
+                                          F@_5,
+                                          F@_6,
+                                          TrUserData);
+        48 ->
+            d_field_MessageIdData_batch_size(Rest,
+                                             0,
+                                             0,
+                                             F@_1,
+                                             F@_2,
+                                             F@_3,
+                                             F@_4,
+                                             F@_5,
+                                             F@_6,
+                                             TrUserData);
         _ ->
             case Key band 7 of
                 0 ->
-                    skip_varint_MessageIdData(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+                    skip_varint_MessageIdData(Rest,
+                                              0,
+                                              0,
+                                              F@_1,
+                                              F@_2,
+                                              F@_3,
+                                              F@_4,
+                                              F@_5,
+                                              F@_6,
+                                              TrUserData);
                 1 ->
-                    skip_64_MessageIdData(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+                    skip_64_MessageIdData(Rest,
+                                          0,
+                                          0,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          F@_4,
+                                          F@_5,
+                                          F@_6,
+                                          TrUserData);
                 2 ->
                     skip_length_delimited_MessageIdData(Rest,
                                                         0,
@@ -5048,6 +5348,7 @@ dg_read_field_def_MessageIdData(<<0:1, X:7, Rest/binary>>,
                                                         F@_3,
                                                         F@_4,
                                                         F@_5,
+                                                        F@_6,
                                                         TrUserData);
                 3 ->
                     skip_group_MessageIdData(Rest,
@@ -5058,17 +5359,37 @@ dg_read_field_def_MessageIdData(<<0:1, X:7, Rest/binary>>,
                                              F@_3,
                                              F@_4,
                                              F@_5,
+                                             F@_6,
                                              TrUserData);
                 5 ->
-                    skip_32_MessageIdData(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData)
+                    skip_32_MessageIdData(Rest,
+                                          0,
+                                          0,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          F@_4,
+                                          F@_5,
+                                          F@_6,
+                                          TrUserData)
             end
     end;
-dg_read_field_def_MessageIdData(<<>>, 0, 0, F@_1, F@_2, F@_3, F@_4, R1, TrUserData) ->
+dg_read_field_def_MessageIdData(<<>>,
+                                0,
+                                0,
+                                F@_1,
+                                F@_2,
+                                F@_3,
+                                F@_4,
+                                R1,
+                                F@_6,
+                                TrUserData) ->
     #'MessageIdData'{ledgerId = F@_1,
                      entryId = F@_2,
                      partition = F@_3,
                      batch_index = F@_4,
-                     ack_set = lists_reverse(R1, TrUserData)}.
+                     ack_set = lists_reverse(R1, TrUserData),
+                     batch_size = F@_6}.
 
 d_field_MessageIdData_ledgerId(<<1:1, X:7, Rest/binary>>,
                                N,
@@ -5078,6 +5399,7 @@ d_field_MessageIdData_ledgerId(<<1:1, X:7, Rest/binary>>,
                                F@_3,
                                F@_4,
                                F@_5,
+                               F@_6,
                                TrUserData)
     when N < 57 ->
     d_field_MessageIdData_ledgerId(Rest,
@@ -5088,6 +5410,7 @@ d_field_MessageIdData_ledgerId(<<1:1, X:7, Rest/binary>>,
                                    F@_3,
                                    F@_4,
                                    F@_5,
+                                   F@_6,
                                    TrUserData);
 d_field_MessageIdData_ledgerId(<<0:1, X:7, Rest/binary>>,
                                N,
@@ -5097,6 +5420,7 @@ d_field_MessageIdData_ledgerId(<<0:1, X:7, Rest/binary>>,
                                F@_3,
                                F@_4,
                                F@_5,
+                               F@_6,
                                TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_MessageIdData(RestF,
@@ -5107,6 +5431,7 @@ d_field_MessageIdData_ledgerId(<<0:1, X:7, Rest/binary>>,
                                      F@_3,
                                      F@_4,
                                      F@_5,
+                                     F@_6,
                                      TrUserData).
 
 d_field_MessageIdData_entryId(<<1:1, X:7, Rest/binary>>,
@@ -5117,6 +5442,7 @@ d_field_MessageIdData_entryId(<<1:1, X:7, Rest/binary>>,
                               F@_3,
                               F@_4,
                               F@_5,
+                              F@_6,
                               TrUserData)
     when N < 57 ->
     d_field_MessageIdData_entryId(Rest,
@@ -5127,6 +5453,7 @@ d_field_MessageIdData_entryId(<<1:1, X:7, Rest/binary>>,
                                   F@_3,
                                   F@_4,
                                   F@_5,
+                                  F@_6,
                                   TrUserData);
 d_field_MessageIdData_entryId(<<0:1, X:7, Rest/binary>>,
                               N,
@@ -5136,6 +5463,7 @@ d_field_MessageIdData_entryId(<<0:1, X:7, Rest/binary>>,
                               F@_3,
                               F@_4,
                               F@_5,
+                              F@_6,
                               TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_MessageIdData(RestF,
@@ -5146,6 +5474,7 @@ d_field_MessageIdData_entryId(<<0:1, X:7, Rest/binary>>,
                                      F@_3,
                                      F@_4,
                                      F@_5,
+                                     F@_6,
                                      TrUserData).
 
 d_field_MessageIdData_partition(<<1:1, X:7, Rest/binary>>,
@@ -5156,6 +5485,7 @@ d_field_MessageIdData_partition(<<1:1, X:7, Rest/binary>>,
                                 F@_3,
                                 F@_4,
                                 F@_5,
+                                F@_6,
                                 TrUserData)
     when N < 57 ->
     d_field_MessageIdData_partition(Rest,
@@ -5166,6 +5496,7 @@ d_field_MessageIdData_partition(<<1:1, X:7, Rest/binary>>,
                                     F@_3,
                                     F@_4,
                                     F@_5,
+                                    F@_6,
                                     TrUserData);
 d_field_MessageIdData_partition(<<0:1, X:7, Rest/binary>>,
                                 N,
@@ -5175,6 +5506,7 @@ d_field_MessageIdData_partition(<<0:1, X:7, Rest/binary>>,
                                 _,
                                 F@_4,
                                 F@_5,
+                                F@_6,
                                 TrUserData) ->
     {NewFValue, RestF} =
         {begin
@@ -5190,6 +5522,7 @@ d_field_MessageIdData_partition(<<0:1, X:7, Rest/binary>>,
                                      NewFValue,
                                      F@_4,
                                      F@_5,
+                                     F@_6,
                                      TrUserData).
 
 d_field_MessageIdData_batch_index(<<1:1, X:7, Rest/binary>>,
@@ -5200,6 +5533,7 @@ d_field_MessageIdData_batch_index(<<1:1, X:7, Rest/binary>>,
                                   F@_3,
                                   F@_4,
                                   F@_5,
+                                  F@_6,
                                   TrUserData)
     when N < 57 ->
     d_field_MessageIdData_batch_index(Rest,
@@ -5210,6 +5544,7 @@ d_field_MessageIdData_batch_index(<<1:1, X:7, Rest/binary>>,
                                       F@_3,
                                       F@_4,
                                       F@_5,
+                                      F@_6,
                                       TrUserData);
 d_field_MessageIdData_batch_index(<<0:1, X:7, Rest/binary>>,
                                   N,
@@ -5219,6 +5554,7 @@ d_field_MessageIdData_batch_index(<<0:1, X:7, Rest/binary>>,
                                   F@_3,
                                   _,
                                   F@_5,
+                                  F@_6,
                                   TrUserData) ->
     {NewFValue, RestF} =
         {begin
@@ -5234,6 +5570,7 @@ d_field_MessageIdData_batch_index(<<0:1, X:7, Rest/binary>>,
                                      F@_3,
                                      NewFValue,
                                      F@_5,
+                                     F@_6,
                                      TrUserData).
 
 d_field_MessageIdData_ack_set(<<1:1, X:7, Rest/binary>>,
@@ -5244,6 +5581,7 @@ d_field_MessageIdData_ack_set(<<1:1, X:7, Rest/binary>>,
                               F@_3,
                               F@_4,
                               F@_5,
+                              F@_6,
                               TrUserData)
     when N < 57 ->
     d_field_MessageIdData_ack_set(Rest,
@@ -5254,6 +5592,7 @@ d_field_MessageIdData_ack_set(<<1:1, X:7, Rest/binary>>,
                                   F@_3,
                                   F@_4,
                                   F@_5,
+                                  F@_6,
                                   TrUserData);
 d_field_MessageIdData_ack_set(<<0:1, X:7, Rest/binary>>,
                               N,
@@ -5263,6 +5602,7 @@ d_field_MessageIdData_ack_set(<<0:1, X:7, Rest/binary>>,
                               F@_3,
                               F@_4,
                               Prev,
+                              F@_6,
                               TrUserData) ->
     {NewFValue, RestF} =
         {begin
@@ -5278,6 +5618,7 @@ d_field_MessageIdData_ack_set(<<0:1, X:7, Rest/binary>>,
                                      F@_3,
                                      F@_4,
                                      cons(NewFValue, Prev, TrUserData),
+                                     F@_6,
                                      TrUserData).
 
 d_pfield_MessageIdData_ack_set(<<1:1, X:7, Rest/binary>>,
@@ -5288,6 +5629,7 @@ d_pfield_MessageIdData_ack_set(<<1:1, X:7, Rest/binary>>,
                                F@_3,
                                F@_4,
                                F@_5,
+                               F@_6,
                                TrUserData)
     when N < 57 ->
     d_pfield_MessageIdData_ack_set(Rest,
@@ -5298,6 +5640,7 @@ d_pfield_MessageIdData_ack_set(<<1:1, X:7, Rest/binary>>,
                                    F@_3,
                                    F@_4,
                                    F@_5,
+                                   F@_6,
                                    TrUserData);
 d_pfield_MessageIdData_ack_set(<<0:1, X:7, Rest/binary>>,
                                N,
@@ -5307,11 +5650,21 @@ d_pfield_MessageIdData_ack_set(<<0:1, X:7, Rest/binary>>,
                                F@_3,
                                F@_4,
                                E,
+                               F@_6,
                                TrUserData) ->
     Len = X bsl N + Acc,
     <<PackedBytes:Len/binary, Rest2/binary>> = Rest,
     NewSeq = d_packed_field_MessageIdData_ack_set(PackedBytes, 0, 0, E, TrUserData),
-    dfp_read_field_def_MessageIdData(Rest2, 0, 0, F@_1, F@_2, F@_3, F@_4, NewSeq, TrUserData).
+    dfp_read_field_def_MessageIdData(Rest2,
+                                     0,
+                                     0,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     NewSeq,
+                                     F@_6,
+                                     TrUserData).
 
 d_packed_field_MessageIdData_ack_set(<<1:1, X:7, Rest/binary>>,
                                      N,
@@ -5335,6 +5688,54 @@ d_packed_field_MessageIdData_ack_set(<<0:1, X:7, Rest/binary>>,
 d_packed_field_MessageIdData_ack_set(<<>>, 0, 0, AccSeq, _) ->
     AccSeq.
 
+d_field_MessageIdData_batch_size(<<1:1, X:7, Rest/binary>>,
+                                 N,
+                                 Acc,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 F@_6,
+                                 TrUserData)
+    when N < 57 ->
+    d_field_MessageIdData_batch_size(Rest,
+                                     N + 7,
+                                     X bsl N + Acc,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     F@_6,
+                                     TrUserData);
+d_field_MessageIdData_batch_size(<<0:1, X:7, Rest/binary>>,
+                                 N,
+                                 Acc,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 _,
+                                 TrUserData) ->
+    {NewFValue, RestF} =
+        {begin
+             <<Res:32/signed-native>> = <<(X bsl N + Acc):32/unsigned-native>>,
+             id(Res, TrUserData)
+         end,
+         Rest},
+    dfp_read_field_def_MessageIdData(RestF,
+                                     0,
+                                     0,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     NewFValue,
+                                     TrUserData).
+
 skip_varint_MessageIdData(<<1:1, _:7, Rest/binary>>,
                           Z1,
                           Z2,
@@ -5343,8 +5744,9 @@ skip_varint_MessageIdData(<<1:1, _:7, Rest/binary>>,
                           F@_3,
                           F@_4,
                           F@_5,
+                          F@_6,
                           TrUserData) ->
-    skip_varint_MessageIdData(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+    skip_varint_MessageIdData(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, TrUserData);
 skip_varint_MessageIdData(<<0:1, _:7, Rest/binary>>,
                           Z1,
                           Z2,
@@ -5353,8 +5755,18 @@ skip_varint_MessageIdData(<<0:1, _:7, Rest/binary>>,
                           F@_3,
                           F@_4,
                           F@_5,
+                          F@_6,
                           TrUserData) ->
-    dfp_read_field_def_MessageIdData(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
+    dfp_read_field_def_MessageIdData(Rest,
+                                     Z1,
+                                     Z2,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     F@_6,
+                                     TrUserData).
 
 skip_length_delimited_MessageIdData(<<1:1, X:7, Rest/binary>>,
                                     N,
@@ -5364,6 +5776,7 @@ skip_length_delimited_MessageIdData(<<1:1, X:7, Rest/binary>>,
                                     F@_3,
                                     F@_4,
                                     F@_5,
+                                    F@_6,
                                     TrUserData)
     when N < 57 ->
     skip_length_delimited_MessageIdData(Rest,
@@ -5374,6 +5787,7 @@ skip_length_delimited_MessageIdData(<<1:1, X:7, Rest/binary>>,
                                         F@_3,
                                         F@_4,
                                         F@_5,
+                                        F@_6,
                                         TrUserData);
 skip_length_delimited_MessageIdData(<<0:1, X:7, Rest/binary>>,
                                     N,
@@ -5383,14 +5797,33 @@ skip_length_delimited_MessageIdData(<<0:1, X:7, Rest/binary>>,
                                     F@_3,
                                     F@_4,
                                     F@_5,
+                                    F@_6,
                                     TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
-    dfp_read_field_def_MessageIdData(Rest2, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
+    dfp_read_field_def_MessageIdData(Rest2,
+                                     0,
+                                     0,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     F@_6,
+                                     TrUserData).
 
-skip_group_MessageIdData(Bin, FNum, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData) ->
+skip_group_MessageIdData(Bin, FNum, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
-    dfp_read_field_def_MessageIdData(Rest, 0, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
+    dfp_read_field_def_MessageIdData(Rest,
+                                     0,
+                                     Z2,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     F@_6,
+                                     TrUserData).
 
 skip_32_MessageIdData(<<_:32, Rest/binary>>,
                       Z1,
@@ -5400,8 +5833,18 @@ skip_32_MessageIdData(<<_:32, Rest/binary>>,
                       F@_3,
                       F@_4,
                       F@_5,
+                      F@_6,
                       TrUserData) ->
-    dfp_read_field_def_MessageIdData(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
+    dfp_read_field_def_MessageIdData(Rest,
+                                     Z1,
+                                     Z2,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     F@_6,
+                                     TrUserData).
 
 skip_64_MessageIdData(<<_:64, Rest/binary>>,
                       Z1,
@@ -5411,8 +5854,18 @@ skip_64_MessageIdData(<<_:64, Rest/binary>>,
                       F@_3,
                       F@_4,
                       F@_5,
+                      F@_6,
                       TrUserData) ->
-    dfp_read_field_def_MessageIdData(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
+    dfp_read_field_def_MessageIdData(Rest,
+                                     Z1,
+                                     Z2,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     F@_6,
+                                     TrUserData).
 
 decode_msg_KeyValue(Bin, TrUserData) ->
     dfp_read_field_def_KeyValue(Bin,
@@ -21164,6 +21617,7 @@ decode_msg_CommandAck(Bin, TrUserData) ->
                                   id([], TrUserData),
                                   id(undefined, TrUserData),
                                   id(undefined, TrUserData),
+                                  id(undefined, TrUserData),
                                   TrUserData).
 
 dfp_read_field_def_CommandAck(<<8, Rest/binary>>,
@@ -21176,6 +21630,7 @@ dfp_read_field_def_CommandAck(<<8, Rest/binary>>,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     d_field_CommandAck_consumer_id(Rest,
                                    Z1,
@@ -21187,6 +21642,7 @@ dfp_read_field_def_CommandAck(<<8, Rest/binary>>,
                                    F@_5,
                                    F@_6,
                                    F@_7,
+                                   F@_8,
                                    TrUserData);
 dfp_read_field_def_CommandAck(<<16, Rest/binary>>,
                               Z1,
@@ -21198,6 +21654,7 @@ dfp_read_field_def_CommandAck(<<16, Rest/binary>>,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     d_field_CommandAck_ack_type(Rest,
                                 Z1,
@@ -21209,6 +21666,7 @@ dfp_read_field_def_CommandAck(<<16, Rest/binary>>,
                                 F@_5,
                                 F@_6,
                                 F@_7,
+                                F@_8,
                                 TrUserData);
 dfp_read_field_def_CommandAck(<<26, Rest/binary>>,
                               Z1,
@@ -21220,6 +21678,7 @@ dfp_read_field_def_CommandAck(<<26, Rest/binary>>,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     d_field_CommandAck_message_id(Rest,
                                   Z1,
@@ -21231,6 +21690,7 @@ dfp_read_field_def_CommandAck(<<26, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData);
 dfp_read_field_def_CommandAck(<<32, Rest/binary>>,
                               Z1,
@@ -21242,6 +21702,7 @@ dfp_read_field_def_CommandAck(<<32, Rest/binary>>,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     d_field_CommandAck_validation_error(Rest,
                                         Z1,
@@ -21253,6 +21714,7 @@ dfp_read_field_def_CommandAck(<<32, Rest/binary>>,
                                         F@_5,
                                         F@_6,
                                         F@_7,
+                                        F@_8,
                                         TrUserData);
 dfp_read_field_def_CommandAck(<<42, Rest/binary>>,
                               Z1,
@@ -21264,6 +21726,7 @@ dfp_read_field_def_CommandAck(<<42, Rest/binary>>,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     d_field_CommandAck_properties(Rest,
                                   Z1,
@@ -21275,6 +21738,7 @@ dfp_read_field_def_CommandAck(<<42, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData);
 dfp_read_field_def_CommandAck(<<48, Rest/binary>>,
                               Z1,
@@ -21286,6 +21750,7 @@ dfp_read_field_def_CommandAck(<<48, Rest/binary>>,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     d_field_CommandAck_txnid_least_bits(Rest,
                                         Z1,
@@ -21297,6 +21762,7 @@ dfp_read_field_def_CommandAck(<<48, Rest/binary>>,
                                         F@_5,
                                         F@_6,
                                         F@_7,
+                                        F@_8,
                                         TrUserData);
 dfp_read_field_def_CommandAck(<<56, Rest/binary>>,
                               Z1,
@@ -21308,6 +21774,7 @@ dfp_read_field_def_CommandAck(<<56, Rest/binary>>,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     d_field_CommandAck_txnid_most_bits(Rest,
                                        Z1,
@@ -21319,7 +21786,32 @@ dfp_read_field_def_CommandAck(<<56, Rest/binary>>,
                                        F@_5,
                                        F@_6,
                                        F@_7,
+                                       F@_8,
                                        TrUserData);
+dfp_read_field_def_CommandAck(<<64, Rest/binary>>,
+                              Z1,
+                              Z2,
+                              F@_1,
+                              F@_2,
+                              F@_3,
+                              F@_4,
+                              F@_5,
+                              F@_6,
+                              F@_7,
+                              F@_8,
+                              TrUserData) ->
+    d_field_CommandAck_request_id(Rest,
+                                  Z1,
+                                  Z2,
+                                  F@_1,
+                                  F@_2,
+                                  F@_3,
+                                  F@_4,
+                                  F@_5,
+                                  F@_6,
+                                  F@_7,
+                                  F@_8,
+                                  TrUserData);
 dfp_read_field_def_CommandAck(<<>>,
                               0,
                               0,
@@ -21330,6 +21822,7 @@ dfp_read_field_def_CommandAck(<<>>,
                               R2,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     #'CommandAck'{consumer_id = F@_1,
                   ack_type = F@_2,
@@ -21337,7 +21830,8 @@ dfp_read_field_def_CommandAck(<<>>,
                   validation_error = F@_4,
                   properties = lists_reverse(R2, TrUserData),
                   txnid_least_bits = F@_6,
-                  txnid_most_bits = F@_7};
+                  txnid_most_bits = F@_7,
+                  request_id = F@_8};
 dfp_read_field_def_CommandAck(Other,
                               Z1,
                               Z2,
@@ -21348,6 +21842,7 @@ dfp_read_field_def_CommandAck(Other,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     dg_read_field_def_CommandAck(Other,
                                  Z1,
@@ -21359,6 +21854,7 @@ dfp_read_field_def_CommandAck(Other,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
                                  TrUserData).
 
 dg_read_field_def_CommandAck(<<1:1, X:7, Rest/binary>>,
@@ -21371,6 +21867,7 @@ dg_read_field_def_CommandAck(<<1:1, X:7, Rest/binary>>,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_CommandAck(Rest,
@@ -21383,6 +21880,7 @@ dg_read_field_def_CommandAck(<<1:1, X:7, Rest/binary>>,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
                                  TrUserData);
 dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                              N,
@@ -21394,6 +21892,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                              F@_5,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
@@ -21408,6 +21907,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                            F@_5,
                                            F@_6,
                                            F@_7,
+                                           F@_8,
                                            TrUserData);
         16 ->
             d_field_CommandAck_ack_type(Rest,
@@ -21420,6 +21920,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                         F@_5,
                                         F@_6,
                                         F@_7,
+                                        F@_8,
                                         TrUserData);
         26 ->
             d_field_CommandAck_message_id(Rest,
@@ -21432,6 +21933,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                           F@_5,
                                           F@_6,
                                           F@_7,
+                                          F@_8,
                                           TrUserData);
         32 ->
             d_field_CommandAck_validation_error(Rest,
@@ -21444,6 +21946,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                                 F@_5,
                                                 F@_6,
                                                 F@_7,
+                                                F@_8,
                                                 TrUserData);
         42 ->
             d_field_CommandAck_properties(Rest,
@@ -21456,6 +21959,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                           F@_5,
                                           F@_6,
                                           F@_7,
+                                          F@_8,
                                           TrUserData);
         48 ->
             d_field_CommandAck_txnid_least_bits(Rest,
@@ -21468,6 +21972,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                                 F@_5,
                                                 F@_6,
                                                 F@_7,
+                                                F@_8,
                                                 TrUserData);
         56 ->
             d_field_CommandAck_txnid_most_bits(Rest,
@@ -21480,7 +21985,21 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                                F@_5,
                                                F@_6,
                                                F@_7,
+                                               F@_8,
                                                TrUserData);
+        64 ->
+            d_field_CommandAck_request_id(Rest,
+                                          0,
+                                          0,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          F@_4,
+                                          F@_5,
+                                          F@_6,
+                                          F@_7,
+                                          F@_8,
+                                          TrUserData);
         _ ->
             case Key band 7 of
                 0 ->
@@ -21494,6 +22013,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                            F@_5,
                                            F@_6,
                                            F@_7,
+                                           F@_8,
                                            TrUserData);
                 1 ->
                     skip_64_CommandAck(Rest,
@@ -21506,6 +22026,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                        F@_5,
                                        F@_6,
                                        F@_7,
+                                       F@_8,
                                        TrUserData);
                 2 ->
                     skip_length_delimited_CommandAck(Rest,
@@ -21518,6 +22039,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                                      F@_5,
                                                      F@_6,
                                                      F@_7,
+                                                     F@_8,
                                                      TrUserData);
                 3 ->
                     skip_group_CommandAck(Rest,
@@ -21530,6 +22052,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                           F@_5,
                                           F@_6,
                                           F@_7,
+                                          F@_8,
                                           TrUserData);
                 5 ->
                     skip_32_CommandAck(Rest,
@@ -21542,6 +22065,7 @@ dg_read_field_def_CommandAck(<<0:1, X:7, Rest/binary>>,
                                        F@_5,
                                        F@_6,
                                        F@_7,
+                                       F@_8,
                                        TrUserData)
             end
     end;
@@ -21555,6 +22079,7 @@ dg_read_field_def_CommandAck(<<>>,
                              R2,
                              F@_6,
                              F@_7,
+                             F@_8,
                              TrUserData) ->
     #'CommandAck'{consumer_id = F@_1,
                   ack_type = F@_2,
@@ -21562,7 +22087,8 @@ dg_read_field_def_CommandAck(<<>>,
                   validation_error = F@_4,
                   properties = lists_reverse(R2, TrUserData),
                   txnid_least_bits = F@_6,
-                  txnid_most_bits = F@_7}.
+                  txnid_most_bits = F@_7,
+                  request_id = F@_8}.
 
 d_field_CommandAck_consumer_id(<<1:1, X:7, Rest/binary>>,
                                N,
@@ -21574,6 +22100,7 @@ d_field_CommandAck_consumer_id(<<1:1, X:7, Rest/binary>>,
                                F@_5,
                                F@_6,
                                F@_7,
+                               F@_8,
                                TrUserData)
     when N < 57 ->
     d_field_CommandAck_consumer_id(Rest,
@@ -21586,6 +22113,7 @@ d_field_CommandAck_consumer_id(<<1:1, X:7, Rest/binary>>,
                                    F@_5,
                                    F@_6,
                                    F@_7,
+                                   F@_8,
                                    TrUserData);
 d_field_CommandAck_consumer_id(<<0:1, X:7, Rest/binary>>,
                                N,
@@ -21597,6 +22125,7 @@ d_field_CommandAck_consumer_id(<<0:1, X:7, Rest/binary>>,
                                F@_5,
                                F@_6,
                                F@_7,
+                               F@_8,
                                TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_CommandAck(RestF,
@@ -21609,6 +22138,7 @@ d_field_CommandAck_consumer_id(<<0:1, X:7, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 d_field_CommandAck_ack_type(<<1:1, X:7, Rest/binary>>,
@@ -21621,6 +22151,7 @@ d_field_CommandAck_ack_type(<<1:1, X:7, Rest/binary>>,
                             F@_5,
                             F@_6,
                             F@_7,
+                            F@_8,
                             TrUserData)
     when N < 57 ->
     d_field_CommandAck_ack_type(Rest,
@@ -21633,6 +22164,7 @@ d_field_CommandAck_ack_type(<<1:1, X:7, Rest/binary>>,
                                 F@_5,
                                 F@_6,
                                 F@_7,
+                                F@_8,
                                 TrUserData);
 d_field_CommandAck_ack_type(<<0:1, X:7, Rest/binary>>,
                             N,
@@ -21644,6 +22176,7 @@ d_field_CommandAck_ack_type(<<0:1, X:7, Rest/binary>>,
                             F@_5,
                             F@_6,
                             F@_7,
+                            F@_8,
                             TrUserData) ->
     {NewFValue, RestF} =
         {id('d_enum_CommandAck.AckType'(begin
@@ -21663,6 +22196,7 @@ d_field_CommandAck_ack_type(<<0:1, X:7, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 d_field_CommandAck_message_id(<<1:1, X:7, Rest/binary>>,
@@ -21675,6 +22209,7 @@ d_field_CommandAck_message_id(<<1:1, X:7, Rest/binary>>,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData)
     when N < 57 ->
     d_field_CommandAck_message_id(Rest,
@@ -21687,6 +22222,7 @@ d_field_CommandAck_message_id(<<1:1, X:7, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData);
 d_field_CommandAck_message_id(<<0:1, X:7, Rest/binary>>,
                               N,
@@ -21698,6 +22234,7 @@ d_field_CommandAck_message_id(<<0:1, X:7, Rest/binary>>,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     {NewFValue, RestF} =
         begin
@@ -21715,6 +22252,7 @@ d_field_CommandAck_message_id(<<0:1, X:7, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 d_field_CommandAck_validation_error(<<1:1, X:7, Rest/binary>>,
@@ -21727,6 +22265,7 @@ d_field_CommandAck_validation_error(<<1:1, X:7, Rest/binary>>,
                                     F@_5,
                                     F@_6,
                                     F@_7,
+                                    F@_8,
                                     TrUserData)
     when N < 57 ->
     d_field_CommandAck_validation_error(Rest,
@@ -21739,6 +22278,7 @@ d_field_CommandAck_validation_error(<<1:1, X:7, Rest/binary>>,
                                         F@_5,
                                         F@_6,
                                         F@_7,
+                                        F@_8,
                                         TrUserData);
 d_field_CommandAck_validation_error(<<0:1, X:7, Rest/binary>>,
                                     N,
@@ -21750,6 +22290,7 @@ d_field_CommandAck_validation_error(<<0:1, X:7, Rest/binary>>,
                                     F@_5,
                                     F@_6,
                                     F@_7,
+                                    F@_8,
                                     TrUserData) ->
     {NewFValue, RestF} =
         {id('d_enum_CommandAck.ValidationError'(begin
@@ -21769,6 +22310,7 @@ d_field_CommandAck_validation_error(<<0:1, X:7, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 d_field_CommandAck_properties(<<1:1, X:7, Rest/binary>>,
@@ -21781,6 +22323,7 @@ d_field_CommandAck_properties(<<1:1, X:7, Rest/binary>>,
                               F@_5,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData)
     when N < 57 ->
     d_field_CommandAck_properties(Rest,
@@ -21793,6 +22336,7 @@ d_field_CommandAck_properties(<<1:1, X:7, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData);
 d_field_CommandAck_properties(<<0:1, X:7, Rest/binary>>,
                               N,
@@ -21804,6 +22348,7 @@ d_field_CommandAck_properties(<<0:1, X:7, Rest/binary>>,
                               Prev,
                               F@_6,
                               F@_7,
+                              F@_8,
                               TrUserData) ->
     {NewFValue, RestF} =
         begin
@@ -21821,6 +22366,7 @@ d_field_CommandAck_properties(<<0:1, X:7, Rest/binary>>,
                                   cons(NewFValue, Prev, TrUserData),
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 d_field_CommandAck_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
@@ -21833,6 +22379,7 @@ d_field_CommandAck_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
                                     F@_5,
                                     F@_6,
                                     F@_7,
+                                    F@_8,
                                     TrUserData)
     when N < 57 ->
     d_field_CommandAck_txnid_least_bits(Rest,
@@ -21845,6 +22392,7 @@ d_field_CommandAck_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
                                         F@_5,
                                         F@_6,
                                         F@_7,
+                                        F@_8,
                                         TrUserData);
 d_field_CommandAck_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                     N,
@@ -21856,6 +22404,7 @@ d_field_CommandAck_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                     F@_5,
                                     _,
                                     F@_7,
+                                    F@_8,
                                     TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_CommandAck(RestF,
@@ -21868,6 +22417,7 @@ d_field_CommandAck_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                   F@_5,
                                   NewFValue,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 d_field_CommandAck_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
@@ -21880,6 +22430,7 @@ d_field_CommandAck_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
                                    F@_5,
                                    F@_6,
                                    F@_7,
+                                   F@_8,
                                    TrUserData)
     when N < 57 ->
     d_field_CommandAck_txnid_most_bits(Rest,
@@ -21892,6 +22443,7 @@ d_field_CommandAck_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
                                        F@_5,
                                        F@_6,
                                        F@_7,
+                                       F@_8,
                                        TrUserData);
 d_field_CommandAck_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                    N,
@@ -21903,6 +22455,7 @@ d_field_CommandAck_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                    F@_5,
                                    F@_6,
                                    _,
+                                   F@_8,
                                    TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_CommandAck(RestF,
@@ -21914,6 +22467,58 @@ d_field_CommandAck_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                   F@_4,
                                   F@_5,
                                   F@_6,
+                                  NewFValue,
+                                  F@_8,
+                                  TrUserData).
+
+d_field_CommandAck_request_id(<<1:1, X:7, Rest/binary>>,
+                              N,
+                              Acc,
+                              F@_1,
+                              F@_2,
+                              F@_3,
+                              F@_4,
+                              F@_5,
+                              F@_6,
+                              F@_7,
+                              F@_8,
+                              TrUserData)
+    when N < 57 ->
+    d_field_CommandAck_request_id(Rest,
+                                  N + 7,
+                                  X bsl N + Acc,
+                                  F@_1,
+                                  F@_2,
+                                  F@_3,
+                                  F@_4,
+                                  F@_5,
+                                  F@_6,
+                                  F@_7,
+                                  F@_8,
+                                  TrUserData);
+d_field_CommandAck_request_id(<<0:1, X:7, Rest/binary>>,
+                              N,
+                              Acc,
+                              F@_1,
+                              F@_2,
+                              F@_3,
+                              F@_4,
+                              F@_5,
+                              F@_6,
+                              F@_7,
+                              _,
+                              TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
+    dfp_read_field_def_CommandAck(RestF,
+                                  0,
+                                  0,
+                                  F@_1,
+                                  F@_2,
+                                  F@_3,
+                                  F@_4,
+                                  F@_5,
+                                  F@_6,
+                                  F@_7,
                                   NewFValue,
                                   TrUserData).
 
@@ -21927,6 +22532,7 @@ skip_varint_CommandAck(<<1:1, _:7, Rest/binary>>,
                        F@_5,
                        F@_6,
                        F@_7,
+                       F@_8,
                        TrUserData) ->
     skip_varint_CommandAck(Rest,
                            Z1,
@@ -21938,6 +22544,7 @@ skip_varint_CommandAck(<<1:1, _:7, Rest/binary>>,
                            F@_5,
                            F@_6,
                            F@_7,
+                           F@_8,
                            TrUserData);
 skip_varint_CommandAck(<<0:1, _:7, Rest/binary>>,
                        Z1,
@@ -21949,6 +22556,7 @@ skip_varint_CommandAck(<<0:1, _:7, Rest/binary>>,
                        F@_5,
                        F@_6,
                        F@_7,
+                       F@_8,
                        TrUserData) ->
     dfp_read_field_def_CommandAck(Rest,
                                   Z1,
@@ -21960,6 +22568,7 @@ skip_varint_CommandAck(<<0:1, _:7, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 skip_length_delimited_CommandAck(<<1:1, X:7, Rest/binary>>,
@@ -21972,6 +22581,7 @@ skip_length_delimited_CommandAck(<<1:1, X:7, Rest/binary>>,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
                                  TrUserData)
     when N < 57 ->
     skip_length_delimited_CommandAck(Rest,
@@ -21984,6 +22594,7 @@ skip_length_delimited_CommandAck(<<1:1, X:7, Rest/binary>>,
                                      F@_5,
                                      F@_6,
                                      F@_7,
+                                     F@_8,
                                      TrUserData);
 skip_length_delimited_CommandAck(<<0:1, X:7, Rest/binary>>,
                                  N,
@@ -21995,6 +22606,7 @@ skip_length_delimited_CommandAck(<<0:1, X:7, Rest/binary>>,
                                  F@_5,
                                  F@_6,
                                  F@_7,
+                                 F@_8,
                                  TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
@@ -22008,6 +22620,7 @@ skip_length_delimited_CommandAck(<<0:1, X:7, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 skip_group_CommandAck(Bin,
@@ -22020,6 +22633,7 @@ skip_group_CommandAck(Bin,
                       F@_5,
                       F@_6,
                       F@_7,
+                      F@_8,
                       TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
     dfp_read_field_def_CommandAck(Rest,
@@ -22032,6 +22646,7 @@ skip_group_CommandAck(Bin,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 skip_32_CommandAck(<<_:32, Rest/binary>>,
@@ -22044,6 +22659,7 @@ skip_32_CommandAck(<<_:32, Rest/binary>>,
                    F@_5,
                    F@_6,
                    F@_7,
+                   F@_8,
                    TrUserData) ->
     dfp_read_field_def_CommandAck(Rest,
                                   Z1,
@@ -22055,6 +22671,7 @@ skip_32_CommandAck(<<_:32, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 skip_64_CommandAck(<<_:64, Rest/binary>>,
@@ -22067,6 +22684,7 @@ skip_64_CommandAck(<<_:64, Rest/binary>>,
                    F@_5,
                    F@_6,
                    F@_7,
+                   F@_8,
                    TrUserData) ->
     dfp_read_field_def_CommandAck(Rest,
                                   Z1,
@@ -22078,12 +22696,14 @@ skip_64_CommandAck(<<_:64, Rest/binary>>,
                                   F@_5,
                                   F@_6,
                                   F@_7,
+                                  F@_8,
                                   TrUserData).
 
 decode_msg_CommandAckResponse(Bin, TrUserData) ->
     dfp_read_field_def_CommandAckResponse(Bin,
                                           0,
                                           0,
+                                          id(undefined, TrUserData),
                                           id(undefined, TrUserData),
                                           id(undefined, TrUserData),
                                           id(undefined, TrUserData),
@@ -22099,6 +22719,7 @@ dfp_read_field_def_CommandAckResponse(<<8, Rest/binary>>,
                                       F@_3,
                                       F@_4,
                                       F@_5,
+                                      F@_6,
                                       TrUserData) ->
     d_field_CommandAckResponse_consumer_id(Rest,
                                            Z1,
@@ -22108,6 +22729,7 @@ dfp_read_field_def_CommandAckResponse(<<8, Rest/binary>>,
                                            F@_3,
                                            F@_4,
                                            F@_5,
+                                           F@_6,
                                            TrUserData);
 dfp_read_field_def_CommandAckResponse(<<16, Rest/binary>>,
                                       Z1,
@@ -22117,6 +22739,7 @@ dfp_read_field_def_CommandAckResponse(<<16, Rest/binary>>,
                                       F@_3,
                                       F@_4,
                                       F@_5,
+                                      F@_6,
                                       TrUserData) ->
     d_field_CommandAckResponse_txnid_least_bits(Rest,
                                                 Z1,
@@ -22126,6 +22749,7 @@ dfp_read_field_def_CommandAckResponse(<<16, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData);
 dfp_read_field_def_CommandAckResponse(<<24, Rest/binary>>,
                                       Z1,
@@ -22135,6 +22759,7 @@ dfp_read_field_def_CommandAckResponse(<<24, Rest/binary>>,
                                       F@_3,
                                       F@_4,
                                       F@_5,
+                                      F@_6,
                                       TrUserData) ->
     d_field_CommandAckResponse_txnid_most_bits(Rest,
                                                Z1,
@@ -22144,6 +22769,7 @@ dfp_read_field_def_CommandAckResponse(<<24, Rest/binary>>,
                                                F@_3,
                                                F@_4,
                                                F@_5,
+                                               F@_6,
                                                TrUserData);
 dfp_read_field_def_CommandAckResponse(<<32, Rest/binary>>,
                                       Z1,
@@ -22153,8 +22779,18 @@ dfp_read_field_def_CommandAckResponse(<<32, Rest/binary>>,
                                       F@_3,
                                       F@_4,
                                       F@_5,
+                                      F@_6,
                                       TrUserData) ->
-    d_field_CommandAckResponse_error(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+    d_field_CommandAckResponse_error(Rest,
+                                     Z1,
+                                     Z2,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     F@_6,
+                                     TrUserData);
 dfp_read_field_def_CommandAckResponse(<<42, Rest/binary>>,
                                       Z1,
                                       Z2,
@@ -22163,6 +22799,7 @@ dfp_read_field_def_CommandAckResponse(<<42, Rest/binary>>,
                                       F@_3,
                                       F@_4,
                                       F@_5,
+                                      F@_6,
                                       TrUserData) ->
     d_field_CommandAckResponse_message(Rest,
                                        Z1,
@@ -22172,13 +22809,44 @@ dfp_read_field_def_CommandAckResponse(<<42, Rest/binary>>,
                                        F@_3,
                                        F@_4,
                                        F@_5,
+                                       F@_6,
                                        TrUserData);
-dfp_read_field_def_CommandAckResponse(<<>>, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, _) ->
+dfp_read_field_def_CommandAckResponse(<<48, Rest/binary>>,
+                                      Z1,
+                                      Z2,
+                                      F@_1,
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      F@_5,
+                                      F@_6,
+                                      TrUserData) ->
+    d_field_CommandAckResponse_request_id(Rest,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          F@_4,
+                                          F@_5,
+                                          F@_6,
+                                          TrUserData);
+dfp_read_field_def_CommandAckResponse(<<>>,
+                                      0,
+                                      0,
+                                      F@_1,
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      F@_5,
+                                      F@_6,
+                                      _) ->
     #'CommandAckResponse'{consumer_id = F@_1,
                           txnid_least_bits = F@_2,
                           txnid_most_bits = F@_3,
                           error = F@_4,
-                          message = F@_5};
+                          message = F@_5,
+                          request_id = F@_6};
 dfp_read_field_def_CommandAckResponse(Other,
                                       Z1,
                                       Z2,
@@ -22187,6 +22855,7 @@ dfp_read_field_def_CommandAckResponse(Other,
                                       F@_3,
                                       F@_4,
                                       F@_5,
+                                      F@_6,
                                       TrUserData) ->
     dg_read_field_def_CommandAckResponse(Other,
                                          Z1,
@@ -22196,6 +22865,7 @@ dfp_read_field_def_CommandAckResponse(Other,
                                          F@_3,
                                          F@_4,
                                          F@_5,
+                                         F@_6,
                                          TrUserData).
 
 dg_read_field_def_CommandAckResponse(<<1:1, X:7, Rest/binary>>,
@@ -22206,6 +22876,7 @@ dg_read_field_def_CommandAckResponse(<<1:1, X:7, Rest/binary>>,
                                      F@_3,
                                      F@_4,
                                      F@_5,
+                                     F@_6,
                                      TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_CommandAckResponse(Rest,
@@ -22216,6 +22887,7 @@ dg_read_field_def_CommandAckResponse(<<1:1, X:7, Rest/binary>>,
                                          F@_3,
                                          F@_4,
                                          F@_5,
+                                         F@_6,
                                          TrUserData);
 dg_read_field_def_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                      N,
@@ -22225,6 +22897,7 @@ dg_read_field_def_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                      F@_3,
                                      F@_4,
                                      F@_5,
+                                     F@_6,
                                      TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
@@ -22237,6 +22910,7 @@ dg_read_field_def_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                                    F@_3,
                                                    F@_4,
                                                    F@_5,
+                                                   F@_6,
                                                    TrUserData);
         16 ->
             d_field_CommandAckResponse_txnid_least_bits(Rest,
@@ -22247,6 +22921,7 @@ dg_read_field_def_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                                         F@_3,
                                                         F@_4,
                                                         F@_5,
+                                                        F@_6,
                                                         TrUserData);
         24 ->
             d_field_CommandAckResponse_txnid_most_bits(Rest,
@@ -22257,9 +22932,19 @@ dg_read_field_def_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                                        F@_3,
                                                        F@_4,
                                                        F@_5,
+                                                       F@_6,
                                                        TrUserData);
         32 ->
-            d_field_CommandAckResponse_error(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+            d_field_CommandAckResponse_error(Rest,
+                                             0,
+                                             0,
+                                             F@_1,
+                                             F@_2,
+                                             F@_3,
+                                             F@_4,
+                                             F@_5,
+                                             F@_6,
+                                             TrUserData);
         42 ->
             d_field_CommandAckResponse_message(Rest,
                                                0,
@@ -22269,7 +22954,19 @@ dg_read_field_def_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                                F@_3,
                                                F@_4,
                                                F@_5,
+                                               F@_6,
                                                TrUserData);
+        48 ->
+            d_field_CommandAckResponse_request_id(Rest,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  F@_6,
+                                                  TrUserData);
         _ ->
             case Key band 7 of
                 0 ->
@@ -22281,6 +22978,7 @@ dg_read_field_def_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                                    F@_3,
                                                    F@_4,
                                                    F@_5,
+                                                   F@_6,
                                                    TrUserData);
                 1 ->
                     skip_64_CommandAckResponse(Rest,
@@ -22291,6 +22989,7 @@ dg_read_field_def_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                                F@_3,
                                                F@_4,
                                                F@_5,
+                                               F@_6,
                                                TrUserData);
                 2 ->
                     skip_length_delimited_CommandAckResponse(Rest,
@@ -22301,6 +23000,7 @@ dg_read_field_def_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                                              F@_3,
                                                              F@_4,
                                                              F@_5,
+                                                             F@_6,
                                                              TrUserData);
                 3 ->
                     skip_group_CommandAckResponse(Rest,
@@ -22311,17 +23011,28 @@ dg_read_field_def_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                                   F@_3,
                                                   F@_4,
                                                   F@_5,
+                                                  F@_6,
                                                   TrUserData);
                 5 ->
-                    skip_32_CommandAckResponse(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData)
+                    skip_32_CommandAckResponse(Rest,
+                                               0,
+                                               0,
+                                               F@_1,
+                                               F@_2,
+                                               F@_3,
+                                               F@_4,
+                                               F@_5,
+                                               F@_6,
+                                               TrUserData)
             end
     end;
-dg_read_field_def_CommandAckResponse(<<>>, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, _) ->
+dg_read_field_def_CommandAckResponse(<<>>, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, F@_6, _) ->
     #'CommandAckResponse'{consumer_id = F@_1,
                           txnid_least_bits = F@_2,
                           txnid_most_bits = F@_3,
                           error = F@_4,
-                          message = F@_5}.
+                          message = F@_5,
+                          request_id = F@_6}.
 
 d_field_CommandAckResponse_consumer_id(<<1:1, X:7, Rest/binary>>,
                                        N,
@@ -22331,6 +23042,7 @@ d_field_CommandAckResponse_consumer_id(<<1:1, X:7, Rest/binary>>,
                                        F@_3,
                                        F@_4,
                                        F@_5,
+                                       F@_6,
                                        TrUserData)
     when N < 57 ->
     d_field_CommandAckResponse_consumer_id(Rest,
@@ -22341,6 +23053,7 @@ d_field_CommandAckResponse_consumer_id(<<1:1, X:7, Rest/binary>>,
                                            F@_3,
                                            F@_4,
                                            F@_5,
+                                           F@_6,
                                            TrUserData);
 d_field_CommandAckResponse_consumer_id(<<0:1, X:7, Rest/binary>>,
                                        N,
@@ -22350,6 +23063,7 @@ d_field_CommandAckResponse_consumer_id(<<0:1, X:7, Rest/binary>>,
                                        F@_3,
                                        F@_4,
                                        F@_5,
+                                       F@_6,
                                        TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_CommandAckResponse(RestF,
@@ -22360,6 +23074,7 @@ d_field_CommandAckResponse_consumer_id(<<0:1, X:7, Rest/binary>>,
                                           F@_3,
                                           F@_4,
                                           F@_5,
+                                          F@_6,
                                           TrUserData).
 
 d_field_CommandAckResponse_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
@@ -22370,6 +23085,7 @@ d_field_CommandAckResponse_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData)
     when N < 57 ->
     d_field_CommandAckResponse_txnid_least_bits(Rest,
@@ -22380,6 +23096,7 @@ d_field_CommandAckResponse_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData);
 d_field_CommandAckResponse_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                             N,
@@ -22389,6 +23106,7 @@ d_field_CommandAckResponse_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_CommandAckResponse(RestF,
@@ -22399,6 +23117,7 @@ d_field_CommandAckResponse_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                           F@_3,
                                           F@_4,
                                           F@_5,
+                                          F@_6,
                                           TrUserData).
 
 d_field_CommandAckResponse_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
@@ -22409,6 +23128,7 @@ d_field_CommandAckResponse_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
                                            F@_3,
                                            F@_4,
                                            F@_5,
+                                           F@_6,
                                            TrUserData)
     when N < 57 ->
     d_field_CommandAckResponse_txnid_most_bits(Rest,
@@ -22419,6 +23139,7 @@ d_field_CommandAckResponse_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
                                                F@_3,
                                                F@_4,
                                                F@_5,
+                                               F@_6,
                                                TrUserData);
 d_field_CommandAckResponse_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                            N,
@@ -22428,6 +23149,7 @@ d_field_CommandAckResponse_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                            _,
                                            F@_4,
                                            F@_5,
+                                           F@_6,
                                            TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_CommandAckResponse(RestF,
@@ -22438,6 +23160,7 @@ d_field_CommandAckResponse_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                           NewFValue,
                                           F@_4,
                                           F@_5,
+                                          F@_6,
                                           TrUserData).
 
 d_field_CommandAckResponse_error(<<1:1, X:7, Rest/binary>>,
@@ -22448,6 +23171,7 @@ d_field_CommandAckResponse_error(<<1:1, X:7, Rest/binary>>,
                                  F@_3,
                                  F@_4,
                                  F@_5,
+                                 F@_6,
                                  TrUserData)
     when N < 57 ->
     d_field_CommandAckResponse_error(Rest,
@@ -22458,6 +23182,7 @@ d_field_CommandAckResponse_error(<<1:1, X:7, Rest/binary>>,
                                      F@_3,
                                      F@_4,
                                      F@_5,
+                                     F@_6,
                                      TrUserData);
 d_field_CommandAckResponse_error(<<0:1, X:7, Rest/binary>>,
                                  N,
@@ -22467,6 +23192,7 @@ d_field_CommandAckResponse_error(<<0:1, X:7, Rest/binary>>,
                                  F@_3,
                                  _,
                                  F@_5,
+                                 F@_6,
                                  TrUserData) ->
     {NewFValue, RestF} =
         {id(d_enum_ServerError(begin
@@ -22484,6 +23210,7 @@ d_field_CommandAckResponse_error(<<0:1, X:7, Rest/binary>>,
                                           F@_3,
                                           NewFValue,
                                           F@_5,
+                                          F@_6,
                                           TrUserData).
 
 d_field_CommandAckResponse_message(<<1:1, X:7, Rest/binary>>,
@@ -22494,6 +23221,7 @@ d_field_CommandAckResponse_message(<<1:1, X:7, Rest/binary>>,
                                    F@_3,
                                    F@_4,
                                    F@_5,
+                                   F@_6,
                                    TrUserData)
     when N < 57 ->
     d_field_CommandAckResponse_message(Rest,
@@ -22504,6 +23232,7 @@ d_field_CommandAckResponse_message(<<1:1, X:7, Rest/binary>>,
                                        F@_3,
                                        F@_4,
                                        F@_5,
+                                       F@_6,
                                        TrUserData);
 d_field_CommandAckResponse_message(<<0:1, X:7, Rest/binary>>,
                                    N,
@@ -22513,6 +23242,7 @@ d_field_CommandAckResponse_message(<<0:1, X:7, Rest/binary>>,
                                    F@_3,
                                    F@_4,
                                    _,
+                                   F@_6,
                                    TrUserData) ->
     {NewFValue, RestF} =
         begin
@@ -22528,6 +23258,50 @@ d_field_CommandAckResponse_message(<<0:1, X:7, Rest/binary>>,
                                           F@_3,
                                           F@_4,
                                           NewFValue,
+                                          F@_6,
+                                          TrUserData).
+
+d_field_CommandAckResponse_request_id(<<1:1, X:7, Rest/binary>>,
+                                      N,
+                                      Acc,
+                                      F@_1,
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      F@_5,
+                                      F@_6,
+                                      TrUserData)
+    when N < 57 ->
+    d_field_CommandAckResponse_request_id(Rest,
+                                          N + 7,
+                                          X bsl N + Acc,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          F@_4,
+                                          F@_5,
+                                          F@_6,
+                                          TrUserData);
+d_field_CommandAckResponse_request_id(<<0:1, X:7, Rest/binary>>,
+                                      N,
+                                      Acc,
+                                      F@_1,
+                                      F@_2,
+                                      F@_3,
+                                      F@_4,
+                                      F@_5,
+                                      _,
+                                      TrUserData) ->
+    {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
+    dfp_read_field_def_CommandAckResponse(RestF,
+                                          0,
+                                          0,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          F@_4,
+                                          F@_5,
+                                          NewFValue,
                                           TrUserData).
 
 skip_varint_CommandAckResponse(<<1:1, _:7, Rest/binary>>,
@@ -22538,8 +23312,18 @@ skip_varint_CommandAckResponse(<<1:1, _:7, Rest/binary>>,
                                F@_3,
                                F@_4,
                                F@_5,
+                               F@_6,
                                TrUserData) ->
-    skip_varint_CommandAckResponse(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+    skip_varint_CommandAckResponse(Rest,
+                                   Z1,
+                                   Z2,
+                                   F@_1,
+                                   F@_2,
+                                   F@_3,
+                                   F@_4,
+                                   F@_5,
+                                   F@_6,
+                                   TrUserData);
 skip_varint_CommandAckResponse(<<0:1, _:7, Rest/binary>>,
                                Z1,
                                Z2,
@@ -22548,6 +23332,7 @@ skip_varint_CommandAckResponse(<<0:1, _:7, Rest/binary>>,
                                F@_3,
                                F@_4,
                                F@_5,
+                               F@_6,
                                TrUserData) ->
     dfp_read_field_def_CommandAckResponse(Rest,
                                           Z1,
@@ -22557,6 +23342,7 @@ skip_varint_CommandAckResponse(<<0:1, _:7, Rest/binary>>,
                                           F@_3,
                                           F@_4,
                                           F@_5,
+                                          F@_6,
                                           TrUserData).
 
 skip_length_delimited_CommandAckResponse(<<1:1, X:7, Rest/binary>>,
@@ -22567,6 +23353,7 @@ skip_length_delimited_CommandAckResponse(<<1:1, X:7, Rest/binary>>,
                                          F@_3,
                                          F@_4,
                                          F@_5,
+                                         F@_6,
                                          TrUserData)
     when N < 57 ->
     skip_length_delimited_CommandAckResponse(Rest,
@@ -22577,6 +23364,7 @@ skip_length_delimited_CommandAckResponse(<<1:1, X:7, Rest/binary>>,
                                              F@_3,
                                              F@_4,
                                              F@_5,
+                                             F@_6,
                                              TrUserData);
 skip_length_delimited_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                          N,
@@ -22586,6 +23374,7 @@ skip_length_delimited_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                          F@_3,
                                          F@_4,
                                          F@_5,
+                                         F@_6,
                                          TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
@@ -22597,9 +23386,19 @@ skip_length_delimited_CommandAckResponse(<<0:1, X:7, Rest/binary>>,
                                           F@_3,
                                           F@_4,
                                           F@_5,
+                                          F@_6,
                                           TrUserData).
 
-skip_group_CommandAckResponse(Bin, FNum, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData) ->
+skip_group_CommandAckResponse(Bin,
+                              FNum,
+                              Z2,
+                              F@_1,
+                              F@_2,
+                              F@_3,
+                              F@_4,
+                              F@_5,
+                              F@_6,
+                              TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
     dfp_read_field_def_CommandAckResponse(Rest,
                                           0,
@@ -22609,6 +23408,7 @@ skip_group_CommandAckResponse(Bin, FNum, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUse
                                           F@_3,
                                           F@_4,
                                           F@_5,
+                                          F@_6,
                                           TrUserData).
 
 skip_32_CommandAckResponse(<<_:32, Rest/binary>>,
@@ -22619,6 +23419,7 @@ skip_32_CommandAckResponse(<<_:32, Rest/binary>>,
                            F@_3,
                            F@_4,
                            F@_5,
+                           F@_6,
                            TrUserData) ->
     dfp_read_field_def_CommandAckResponse(Rest,
                                           Z1,
@@ -22628,6 +23429,7 @@ skip_32_CommandAckResponse(<<_:32, Rest/binary>>,
                                           F@_3,
                                           F@_4,
                                           F@_5,
+                                          F@_6,
                                           TrUserData).
 
 skip_64_CommandAckResponse(<<_:64, Rest/binary>>,
@@ -22638,6 +23440,7 @@ skip_64_CommandAckResponse(<<_:64, Rest/binary>>,
                            F@_3,
                            F@_4,
                            F@_5,
+                           F@_6,
                            TrUserData) ->
     dfp_read_field_def_CommandAckResponse(Rest,
                                           Z1,
@@ -22647,6 +23450,7 @@ skip_64_CommandAckResponse(<<_:64, Rest/binary>>,
                                           F@_3,
                                           F@_4,
                                           F@_5,
+                                          F@_6,
                                           TrUserData).
 
 decode_msg_CommandActiveConsumerChange(Bin, TrUserData) ->
@@ -28331,6 +29135,7 @@ decode_msg_CommandGetLastMessageIdResponse(Bin, TrUserData) ->
                                                        0,
                                                        id(undefined, TrUserData),
                                                        id(undefined, TrUserData),
+                                                       id(undefined, TrUserData),
                                                        TrUserData).
 
 dfp_read_field_def_CommandGetLastMessageIdResponse(<<10, Rest/binary>>,
@@ -28338,35 +29143,68 @@ dfp_read_field_def_CommandGetLastMessageIdResponse(<<10, Rest/binary>>,
                                                    Z2,
                                                    F@_1,
                                                    F@_2,
+                                                   F@_3,
                                                    TrUserData) ->
     d_field_CommandGetLastMessageIdResponse_last_message_id(Rest,
                                                             Z1,
                                                             Z2,
                                                             F@_1,
                                                             F@_2,
+                                                            F@_3,
                                                             TrUserData);
 dfp_read_field_def_CommandGetLastMessageIdResponse(<<16, Rest/binary>>,
                                                    Z1,
                                                    Z2,
                                                    F@_1,
                                                    F@_2,
+                                                   F@_3,
                                                    TrUserData) ->
-    d_field_CommandGetLastMessageIdResponse_request_id(Rest, Z1, Z2, F@_1, F@_2, TrUserData);
-dfp_read_field_def_CommandGetLastMessageIdResponse(<<>>, 0, 0, F@_1, F@_2, _) ->
-    #'CommandGetLastMessageIdResponse'{last_message_id = F@_1, request_id = F@_2};
+    d_field_CommandGetLastMessageIdResponse_request_id(Rest,
+                                                       Z1,
+                                                       Z2,
+                                                       F@_1,
+                                                       F@_2,
+                                                       F@_3,
+                                                       TrUserData);
+dfp_read_field_def_CommandGetLastMessageIdResponse(<<26, Rest/binary>>,
+                                                   Z1,
+                                                   Z2,
+                                                   F@_1,
+                                                   F@_2,
+                                                   F@_3,
+                                                   TrUserData) ->
+    d_field_CommandGetLastMessageIdResponse_consumer_mark_delete_position(Rest,
+                                                                          Z1,
+                                                                          Z2,
+                                                                          F@_1,
+                                                                          F@_2,
+                                                                          F@_3,
+                                                                          TrUserData);
+dfp_read_field_def_CommandGetLastMessageIdResponse(<<>>, 0, 0, F@_1, F@_2, F@_3, _) ->
+    #'CommandGetLastMessageIdResponse'{last_message_id = F@_1,
+                                       request_id = F@_2,
+                                       consumer_mark_delete_position = F@_3};
 dfp_read_field_def_CommandGetLastMessageIdResponse(Other,
                                                    Z1,
                                                    Z2,
                                                    F@_1,
                                                    F@_2,
+                                                   F@_3,
                                                    TrUserData) ->
-    dg_read_field_def_CommandGetLastMessageIdResponse(Other, Z1, Z2, F@_1, F@_2, TrUserData).
+    dg_read_field_def_CommandGetLastMessageIdResponse(Other,
+                                                      Z1,
+                                                      Z2,
+                                                      F@_1,
+                                                      F@_2,
+                                                      F@_3,
+                                                      TrUserData).
 
 dg_read_field_def_CommandGetLastMessageIdResponse(<<1:1, X:7, Rest/binary>>,
                                                   N,
                                                   Acc,
                                                   F@_1,
                                                   F@_2,
+                                                  F@_3,
                                                   TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_CommandGetLastMessageIdResponse(Rest,
@@ -28374,12 +29212,14 @@ dg_read_field_def_CommandGetLastMessageIdResponse(<<1:1, X:7, Rest/binary>>,
                                                       X bsl N + Acc,
                                                       F@_1,
                                                       F@_2,
+                                                      F@_3,
                                                       TrUserData);
 dg_read_field_def_CommandGetLastMessageIdResponse(<<0:1, X:7, Rest/binary>>,
                                                   N,
                                                   Acc,
                                                   F@_1,
                                                   F@_2,
+                                                  F@_3,
                                                   TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
@@ -28389,21 +29229,49 @@ dg_read_field_def_CommandGetLastMessageIdResponse(<<0:1, X:7, Rest/binary>>,
                                                                     0,
                                                                     F@_1,
                                                                     F@_2,
+                                                                    F@_3,
                                                                     TrUserData);
         16 ->
-            d_field_CommandGetLastMessageIdResponse_request_id(Rest, 0, 0, F@_1, F@_2, TrUserData);
+            d_field_CommandGetLastMessageIdResponse_request_id(Rest,
+                                                               0,
+                                                               0,
+                                                               F@_1,
+                                                               F@_2,
+                                                               F@_3,
+                                                               TrUserData);
+        26 ->
+            d_field_CommandGetLastMessageIdResponse_consumer_mark_delete_position(Rest,
+                                                                                  0,
+                                                                                  0,
+                                                                                  F@_1,
+                                                                                  F@_2,
+                                                                                  F@_3,
+                                                                                  TrUserData);
         _ ->
             case Key band 7 of
                 0 ->
-                    skip_varint_CommandGetLastMessageIdResponse(Rest, 0, 0, F@_1, F@_2, TrUserData);
+                    skip_varint_CommandGetLastMessageIdResponse(Rest,
+                                                                0,
+                                                                0,
+                                                                F@_1,
+                                                                F@_2,
+                                                                F@_3,
+                                                                TrUserData);
                 1 ->
-                    skip_64_CommandGetLastMessageIdResponse(Rest, 0, 0, F@_1, F@_2, TrUserData);
+                    skip_64_CommandGetLastMessageIdResponse(Rest,
+                                                            0,
+                                                            0,
+                                                            F@_1,
+                                                            F@_2,
+                                                            F@_3,
+                                                            TrUserData);
                 2 ->
                     skip_length_delimited_CommandGetLastMessageIdResponse(Rest,
                                                                           0,
                                                                           0,
                                                                           F@_1,
                                                                           F@_2,
+                                                                          F@_3,
                                                                           TrUserData);
                 3 ->
                     skip_group_CommandGetLastMessageIdResponse(Rest,
@@ -28411,19 +29279,29 @@ dg_read_field_def_CommandGetLastMessageIdResponse(<<0:1, X:7, Rest/binary>>,
                                                                0,
                                                                F@_1,
                                                                F@_2,
+                                                               F@_3,
                                                                TrUserData);
                 5 ->
-                    skip_32_CommandGetLastMessageIdResponse(Rest, 0, 0, F@_1, F@_2, TrUserData)
+                    skip_32_CommandGetLastMessageIdResponse(Rest,
+                                                            0,
+                                                            0,
+                                                            F@_1,
+                                                            F@_2,
+                                                            F@_3,
+                                                            TrUserData)
             end
     end;
-dg_read_field_def_CommandGetLastMessageIdResponse(<<>>, 0, 0, F@_1, F@_2, _) ->
-    #'CommandGetLastMessageIdResponse'{last_message_id = F@_1, request_id = F@_2}.
+dg_read_field_def_CommandGetLastMessageIdResponse(<<>>, 0, 0, F@_1, F@_2, F@_3, _) ->
+    #'CommandGetLastMessageIdResponse'{last_message_id = F@_1,
+                                       request_id = F@_2,
+                                       consumer_mark_delete_position = F@_3}.
 
 d_field_CommandGetLastMessageIdResponse_last_message_id(<<1:1, X:7, Rest/binary>>,
                                                         N,
                                                         Acc,
                                                         F@_1,
                                                         F@_2,
+                                                        F@_3,
                                                         TrUserData)
     when N < 57 ->
     d_field_CommandGetLastMessageIdResponse_last_message_id(Rest,
@@ -28431,12 +29309,14 @@ d_field_CommandGetLastMessageIdResponse_last_message_id(<<1:1, X:7, Rest/binary>
                                                             X bsl N + Acc,
                                                             F@_1,
                                                             F@_2,
+                                                            F@_3,
                                                             TrUserData);
 d_field_CommandGetLastMessageIdResponse_last_message_id(<<0:1, X:7, Rest/binary>>,
                                                         N,
                                                         Acc,
                                                         Prev,
                                                         F@_2,
+                                                        F@_3,
                                                         TrUserData) ->
     {NewFValue, RestF} =
         begin
@@ -28455,6 +29335,7 @@ d_field_CommandGetLastMessageIdResponse_last_message_id(<<0:1, X:7, Rest/binary>
                                                                                       TrUserData)
                                                        end,
                                                        F@_2,
+                                                       F@_3,
                                                        TrUserData).
 
 d_field_CommandGetLastMessageIdResponse_request_id(<<1:1, X:7, Rest/binary>>,
@@ -28462,6 +29343,7 @@ d_field_CommandGetLastMessageIdResponse_request_id(<<1:1, X:7, Rest/binary>>,
                                                    Acc,
                                                    F@_1,
                                                    F@_2,
+                                                   F@_3,
                                                    TrUserData)
     when N < 57 ->
     d_field_CommandGetLastMessageIdResponse_request_id(Rest,
@@ -28469,12 +29351,14 @@ d_field_CommandGetLastMessageIdResponse_request_id(<<1:1, X:7, Rest/binary>>,
                                                        X bsl N + Acc,
                                                        F@_1,
                                                        F@_2,
+                                                       F@_3,
                                                        TrUserData);
 d_field_CommandGetLastMessageIdResponse_request_id(<<0:1, X:7, Rest/binary>>,
                                                    N,
                                                    Acc,
                                                    F@_1,
                                                    _,
+                                                   F@_3,
                                                    TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_CommandGetLastMessageIdResponse(RestF,
@@ -28482,6 +29366,53 @@ d_field_CommandGetLastMessageIdResponse_request_id(<<0:1, X:7, Rest/binary>>,
                                                        0,
                                                        F@_1,
                                                        NewFValue,
+                                                       F@_3,
+                                                       TrUserData).
+
+d_field_CommandGetLastMessageIdResponse_consumer_mark_delete_position(<<1:1,
+                                                                        X:7,
+                                                                        Rest/binary>>,
+                                                                      N,
+                                                                      Acc,
+                                                                      F@_1,
+                                                                      F@_2,
+                                                                      F@_3,
+                                                                      TrUserData)
+    when N < 57 ->
+    d_field_CommandGetLastMessageIdResponse_consumer_mark_delete_position(Rest,
+                                                                          N + 7,
+                                                                          X bsl N + Acc,
+                                                                          F@_1,
+                                                                          F@_2,
+                                                                          F@_3,
+                                                                          TrUserData);
+d_field_CommandGetLastMessageIdResponse_consumer_mark_delete_position(<<0:1,
+                                                                        X:7,
+                                                                        Rest/binary>>,
+                                                                      N,
+                                                                      Acc,
+                                                                      F@_1,
+                                                                      F@_2,
+                                                                      Prev,
+                                                                      TrUserData) ->
+    {NewFValue, RestF} =
+        begin
+            Len = X bsl N + Acc,
+            <<Bs:Len/binary, Rest2/binary>> = Rest,
+            {id(decode_msg_MessageIdData(Bs, TrUserData), TrUserData), Rest2}
+        end,
+    dfp_read_field_def_CommandGetLastMessageIdResponse(RestF,
+                                                       0,
+                                                       0,
+                                                       F@_1,
+                                                       F@_2,
+                                                       if Prev == undefined ->
+                                                              NewFValue;
+                                                          true ->
+                                                              merge_msg_MessageIdData(Prev,
+                                                                                      NewFValue,
+                                                                                      TrUserData)
+                                                       end,
                                                        TrUserData).
 
 skip_varint_CommandGetLastMessageIdResponse(<<1:1, _:7, Rest/binary>>,
@@ -28489,21 +29420,30 @@ skip_varint_CommandGetLastMessageIdResponse(<<1:1, _:7, Rest/binary>>,
                                             Z2,
                                             F@_1,
                                             F@_2,
+                                            F@_3,
                                             TrUserData) ->
-    skip_varint_CommandGetLastMessageIdResponse(Rest, Z1, Z2, F@_1, F@_2, TrUserData);
+    skip_varint_CommandGetLastMessageIdResponse(Rest, Z1, Z2, F@_1, F@_2, F@_3, TrUserData);
 skip_varint_CommandGetLastMessageIdResponse(<<0:1, _:7, Rest/binary>>,
                                             Z1,
                                             Z2,
                                             F@_1,
                                             F@_2,
+                                            F@_3,
                                             TrUserData) ->
-    dfp_read_field_def_CommandGetLastMessageIdResponse(Rest, Z1, Z2, F@_1, F@_2, TrUserData).
+    dfp_read_field_def_CommandGetLastMessageIdResponse(Rest,
+                                                       Z1,
+                                                       Z2,
+                                                       F@_1,
+                                                       F@_2,
+                                                       F@_3,
+                                                       TrUserData).
 
 skip_length_delimited_CommandGetLastMessageIdResponse(<<1:1, X:7, Rest/binary>>,
                                                       N,
                                                       Acc,
                                                       F@_1,
                                                       F@_2,
+                                                      F@_3,
                                                       TrUserData)
     when N < 57 ->
     skip_length_delimited_CommandGetLastMessageIdResponse(Rest,
@@ -28511,36 +29451,64 @@ skip_length_delimited_CommandGetLastMessageIdResponse(<<1:1, X:7, Rest/binary>>,
                                                           X bsl N + Acc,
                                                           F@_1,
                                                           F@_2,
+                                                          F@_3,
                                                           TrUserData);
 skip_length_delimited_CommandGetLastMessageIdResponse(<<0:1, X:7, Rest/binary>>,
                                                       N,
                                                       Acc,
                                                       F@_1,
                                                       F@_2,
+                                                      F@_3,
                                                       TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
-    dfp_read_field_def_CommandGetLastMessageIdResponse(Rest2, 0, 0, F@_1, F@_2, TrUserData).
+    dfp_read_field_def_CommandGetLastMessageIdResponse(Rest2,
+                                                       0,
+                                                       0,
+                                                       F@_1,
+                                                       F@_2,
+                                                       F@_3,
+                                                       TrUserData).
 
-skip_group_CommandGetLastMessageIdResponse(Bin, FNum, Z2, F@_1, F@_2, TrUserData) ->
+skip_group_CommandGetLastMessageIdResponse(Bin, FNum, Z2, F@_1, F@_2, F@_3, TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
-    dfp_read_field_def_CommandGetLastMessageIdResponse(Rest, 0, Z2, F@_1, F@_2, TrUserData).
+    dfp_read_field_def_CommandGetLastMessageIdResponse(Rest,
+                                                       0,
+                                                       Z2,
+                                                       F@_1,
+                                                       F@_2,
+                                                       F@_3,
+                                                       TrUserData).
 
 skip_32_CommandGetLastMessageIdResponse(<<_:32, Rest/binary>>,
                                         Z1,
                                         Z2,
                                         F@_1,
                                         F@_2,
+                                        F@_3,
                                         TrUserData) ->
-    dfp_read_field_def_CommandGetLastMessageIdResponse(Rest, Z1, Z2, F@_1, F@_2, TrUserData).
+    dfp_read_field_def_CommandGetLastMessageIdResponse(Rest,
+                                                       Z1,
+                                                       Z2,
+                                                       F@_1,
+                                                       F@_2,
+                                                       F@_3,
+                                                       TrUserData).
 
 skip_64_CommandGetLastMessageIdResponse(<<_:64, Rest/binary>>,
                                         Z1,
                                         Z2,
                                         F@_1,
                                         F@_2,
+                                        F@_3,
                                         TrUserData) ->
-    dfp_read_field_def_CommandGetLastMessageIdResponse(Rest, Z1, Z2, F@_1, F@_2, TrUserData).
+    dfp_read_field_def_CommandGetLastMessageIdResponse(Rest,
+                                                       Z1,
+                                                       Z2,
+                                                       F@_1,
+                                                       F@_2,
+                                                       F@_3,
+                                                       TrUserData).
 
 decode_msg_CommandGetTopicsOfNamespace(Bin, TrUserData) ->
     dfp_read_field_def_CommandGetTopicsOfNamespace(Bin,
@@ -33898,6 +34866,7 @@ decode_msg_CommandEndTxn(Bin, TrUserData) ->
                                      id(undefined, TrUserData),
                                      id(undefined, TrUserData),
                                      id(undefined, TrUserData),
+                                     id([], TrUserData),
                                      TrUserData).
 
 dfp_read_field_def_CommandEndTxn(<<8, Rest/binary>>,
@@ -33907,8 +34876,9 @@ dfp_read_field_def_CommandEndTxn(<<8, Rest/binary>>,
                                  F@_2,
                                  F@_3,
                                  F@_4,
+                                 F@_5,
                                  TrUserData) ->
-    d_field_CommandEndTxn_request_id(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData);
+    d_field_CommandEndTxn_request_id(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
 dfp_read_field_def_CommandEndTxn(<<16, Rest/binary>>,
                                  Z1,
                                  Z2,
@@ -33916,8 +34886,17 @@ dfp_read_field_def_CommandEndTxn(<<16, Rest/binary>>,
                                  F@_2,
                                  F@_3,
                                  F@_4,
+                                 F@_5,
                                  TrUserData) ->
-    d_field_CommandEndTxn_txnid_least_bits(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData);
+    d_field_CommandEndTxn_txnid_least_bits(Rest,
+                                           Z1,
+                                           Z2,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           F@_5,
+                                           TrUserData);
 dfp_read_field_def_CommandEndTxn(<<24, Rest/binary>>,
                                  Z1,
                                  Z2,
@@ -33925,8 +34904,17 @@ dfp_read_field_def_CommandEndTxn(<<24, Rest/binary>>,
                                  F@_2,
                                  F@_3,
                                  F@_4,
+                                 F@_5,
                                  TrUserData) ->
-    d_field_CommandEndTxn_txnid_most_bits(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData);
+    d_field_CommandEndTxn_txnid_most_bits(Rest,
+                                          Z1,
+                                          Z2,
+                                          F@_1,
+                                          F@_2,
+                                          F@_3,
+                                          F@_4,
+                                          F@_5,
+                                          TrUserData);
 dfp_read_field_def_CommandEndTxn(<<32, Rest/binary>>,
                                  Z1,
                                  Z2,
@@ -33934,15 +34922,35 @@ dfp_read_field_def_CommandEndTxn(<<32, Rest/binary>>,
                                  F@_2,
                                  F@_3,
                                  F@_4,
+                                 F@_5,
                                  TrUserData) ->
-    d_field_CommandEndTxn_txn_action(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData);
-dfp_read_field_def_CommandEndTxn(<<>>, 0, 0, F@_1, F@_2, F@_3, F@_4, _) ->
+    d_field_CommandEndTxn_txn_action(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+dfp_read_field_def_CommandEndTxn(<<42, Rest/binary>>,
+                                 Z1,
+                                 Z2,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 TrUserData) ->
+    d_field_CommandEndTxn_message_id(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+dfp_read_field_def_CommandEndTxn(<<>>, 0, 0, F@_1, F@_2, F@_3, F@_4, R1, TrUserData) ->
     #'CommandEndTxn'{request_id = F@_1,
                      txnid_least_bits = F@_2,
                      txnid_most_bits = F@_3,
-                     txn_action = F@_4};
-dfp_read_field_def_CommandEndTxn(Other, Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
-    dg_read_field_def_CommandEndTxn(Other, Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData).
+                     txn_action = F@_4,
+                     message_id = lists_reverse(R1, TrUserData)};
+dfp_read_field_def_CommandEndTxn(Other,
+                                 Z1,
+                                 Z2,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 TrUserData) ->
+    dg_read_field_def_CommandEndTxn(Other, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
 
 dg_read_field_def_CommandEndTxn(<<1:1, X:7, Rest/binary>>,
                                 N,
@@ -33951,6 +34959,7 @@ dg_read_field_def_CommandEndTxn(<<1:1, X:7, Rest/binary>>,
                                 F@_2,
                                 F@_3,
                                 F@_4,
+                                F@_5,
                                 TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_CommandEndTxn(Rest,
@@ -33960,6 +34969,7 @@ dg_read_field_def_CommandEndTxn(<<1:1, X:7, Rest/binary>>,
                                     F@_2,
                                     F@_3,
                                     F@_4,
+                                    F@_5,
                                     TrUserData);
 dg_read_field_def_CommandEndTxn(<<0:1, X:7, Rest/binary>>,
                                 N,
@@ -33968,23 +34978,42 @@ dg_read_field_def_CommandEndTxn(<<0:1, X:7, Rest/binary>>,
                                 F@_2,
                                 F@_3,
                                 F@_4,
+                                F@_5,
                                 TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
         8 ->
-            d_field_CommandEndTxn_request_id(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, TrUserData);
+            d_field_CommandEndTxn_request_id(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
         16 ->
-            d_field_CommandEndTxn_txnid_least_bits(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, TrUserData);
+            d_field_CommandEndTxn_txnid_least_bits(Rest,
+                                                   0,
+                                                   0,
+                                                   F@_1,
+                                                   F@_2,
+                                                   F@_3,
+                                                   F@_4,
+                                                   F@_5,
+                                                   TrUserData);
         24 ->
-            d_field_CommandEndTxn_txnid_most_bits(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, TrUserData);
+            d_field_CommandEndTxn_txnid_most_bits(Rest,
+                                                  0,
+                                                  0,
+                                                  F@_1,
+                                                  F@_2,
+                                                  F@_3,
+                                                  F@_4,
+                                                  F@_5,
+                                                  TrUserData);
         32 ->
-            d_field_CommandEndTxn_txn_action(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, TrUserData);
+            d_field_CommandEndTxn_txn_action(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
+        42 ->
+            d_field_CommandEndTxn_message_id(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
         _ ->
             case Key band 7 of
                 0 ->
-                    skip_varint_CommandEndTxn(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, TrUserData);
+                    skip_varint_CommandEndTxn(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
                 1 ->
-                    skip_64_CommandEndTxn(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, TrUserData);
+                    skip_64_CommandEndTxn(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
                 2 ->
                     skip_length_delimited_CommandEndTxn(Rest,
                                                         0,
@@ -33993,6 +35022,7 @@ dg_read_field_def_CommandEndTxn(<<0:1, X:7, Rest/binary>>,
                                                         F@_2,
                                                         F@_3,
                                                         F@_4,
+                                                        F@_5,
                                                         TrUserData);
                 3 ->
                     skip_group_CommandEndTxn(Rest,
@@ -34002,16 +35032,18 @@ dg_read_field_def_CommandEndTxn(<<0:1, X:7, Rest/binary>>,
                                              F@_2,
                                              F@_3,
                                              F@_4,
+                                             F@_5,
                                              TrUserData);
                 5 ->
-                    skip_32_CommandEndTxn(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, TrUserData)
+                    skip_32_CommandEndTxn(Rest, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData)
             end
     end;
-dg_read_field_def_CommandEndTxn(<<>>, 0, 0, F@_1, F@_2, F@_3, F@_4, _) ->
+dg_read_field_def_CommandEndTxn(<<>>, 0, 0, F@_1, F@_2, F@_3, F@_4, R1, TrUserData) ->
     #'CommandEndTxn'{request_id = F@_1,
                      txnid_least_bits = F@_2,
                      txnid_most_bits = F@_3,
-                     txn_action = F@_4}.
+                     txn_action = F@_4,
+                     message_id = lists_reverse(R1, TrUserData)}.
 
 d_field_CommandEndTxn_request_id(<<1:1, X:7, Rest/binary>>,
                                  N,
@@ -34020,6 +35052,7 @@ d_field_CommandEndTxn_request_id(<<1:1, X:7, Rest/binary>>,
                                  F@_2,
                                  F@_3,
                                  F@_4,
+                                 F@_5,
                                  TrUserData)
     when N < 57 ->
     d_field_CommandEndTxn_request_id(Rest,
@@ -34029,6 +35062,7 @@ d_field_CommandEndTxn_request_id(<<1:1, X:7, Rest/binary>>,
                                      F@_2,
                                      F@_3,
                                      F@_4,
+                                     F@_5,
                                      TrUserData);
 d_field_CommandEndTxn_request_id(<<0:1, X:7, Rest/binary>>,
                                  N,
@@ -34037,9 +35071,18 @@ d_field_CommandEndTxn_request_id(<<0:1, X:7, Rest/binary>>,
                                  F@_2,
                                  F@_3,
                                  F@_4,
+                                 F@_5,
                                  TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
-    dfp_read_field_def_CommandEndTxn(RestF, 0, 0, NewFValue, F@_2, F@_3, F@_4, TrUserData).
+    dfp_read_field_def_CommandEndTxn(RestF,
+                                     0,
+                                     0,
+                                     NewFValue,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     TrUserData).
 
 d_field_CommandEndTxn_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
                                        N,
@@ -34048,6 +35091,7 @@ d_field_CommandEndTxn_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
                                        F@_2,
                                        F@_3,
                                        F@_4,
+                                       F@_5,
                                        TrUserData)
     when N < 57 ->
     d_field_CommandEndTxn_txnid_least_bits(Rest,
@@ -34057,6 +35101,7 @@ d_field_CommandEndTxn_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
                                            F@_2,
                                            F@_3,
                                            F@_4,
+                                           F@_5,
                                            TrUserData);
 d_field_CommandEndTxn_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                        N,
@@ -34065,9 +35110,18 @@ d_field_CommandEndTxn_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                        _,
                                        F@_3,
                                        F@_4,
+                                       F@_5,
                                        TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
-    dfp_read_field_def_CommandEndTxn(RestF, 0, 0, F@_1, NewFValue, F@_3, F@_4, TrUserData).
+    dfp_read_field_def_CommandEndTxn(RestF,
+                                     0,
+                                     0,
+                                     F@_1,
+                                     NewFValue,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     TrUserData).
 
 d_field_CommandEndTxn_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
                                       N,
@@ -34076,6 +35130,7 @@ d_field_CommandEndTxn_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
                                       F@_2,
                                       F@_3,
                                       F@_4,
+                                      F@_5,
                                       TrUserData)
     when N < 57 ->
     d_field_CommandEndTxn_txnid_most_bits(Rest,
@@ -34085,6 +35140,7 @@ d_field_CommandEndTxn_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
                                           F@_2,
                                           F@_3,
                                           F@_4,
+                                          F@_5,
                                           TrUserData);
 d_field_CommandEndTxn_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                       N,
@@ -34093,9 +35149,18 @@ d_field_CommandEndTxn_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                       F@_2,
                                       _,
                                       F@_4,
+                                      F@_5,
                                       TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
-    dfp_read_field_def_CommandEndTxn(RestF, 0, 0, F@_1, F@_2, NewFValue, F@_4, TrUserData).
+    dfp_read_field_def_CommandEndTxn(RestF,
+                                     0,
+                                     0,
+                                     F@_1,
+                                     F@_2,
+                                     NewFValue,
+                                     F@_4,
+                                     F@_5,
+                                     TrUserData).
 
 d_field_CommandEndTxn_txn_action(<<1:1, X:7, Rest/binary>>,
                                  N,
@@ -34104,6 +35169,7 @@ d_field_CommandEndTxn_txn_action(<<1:1, X:7, Rest/binary>>,
                                  F@_2,
                                  F@_3,
                                  F@_4,
+                                 F@_5,
                                  TrUserData)
     when N < 57 ->
     d_field_CommandEndTxn_txn_action(Rest,
@@ -34113,6 +35179,7 @@ d_field_CommandEndTxn_txn_action(<<1:1, X:7, Rest/binary>>,
                                      F@_2,
                                      F@_3,
                                      F@_4,
+                                     F@_5,
                                      TrUserData);
 d_field_CommandEndTxn_txn_action(<<0:1, X:7, Rest/binary>>,
                                  N,
@@ -34121,6 +35188,7 @@ d_field_CommandEndTxn_txn_action(<<0:1, X:7, Rest/binary>>,
                                  F@_2,
                                  F@_3,
                                  _,
+                                 F@_5,
                                  TrUserData) ->
     {NewFValue, RestF} =
         {id(d_enum_TxnAction(begin
@@ -34129,7 +35197,59 @@ d_field_CommandEndTxn_txn_action(<<0:1, X:7, Rest/binary>>,
                              end),
             TrUserData),
          Rest},
-    dfp_read_field_def_CommandEndTxn(RestF, 0, 0, F@_1, F@_2, F@_3, NewFValue, TrUserData).
+    dfp_read_field_def_CommandEndTxn(RestF,
+                                     0,
+                                     0,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     NewFValue,
+                                     F@_5,
+                                     TrUserData).
+
+d_field_CommandEndTxn_message_id(<<1:1, X:7, Rest/binary>>,
+                                 N,
+                                 Acc,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 F@_5,
+                                 TrUserData)
+    when N < 57 ->
+    d_field_CommandEndTxn_message_id(Rest,
+                                     N + 7,
+                                     X bsl N + Acc,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     F@_5,
+                                     TrUserData);
+d_field_CommandEndTxn_message_id(<<0:1, X:7, Rest/binary>>,
+                                 N,
+                                 Acc,
+                                 F@_1,
+                                 F@_2,
+                                 F@_3,
+                                 F@_4,
+                                 Prev,
+                                 TrUserData) ->
+    {NewFValue, RestF} =
+        begin
+            Len = X bsl N + Acc,
+            <<Bs:Len/binary, Rest2/binary>> = Rest,
+            {id(decode_msg_MessageIdData(Bs, TrUserData), TrUserData), Rest2}
+        end,
+    dfp_read_field_def_CommandEndTxn(RestF,
+                                     0,
+                                     0,
+                                     F@_1,
+                                     F@_2,
+                                     F@_3,
+                                     F@_4,
+                                     cons(NewFValue, Prev, TrUserData),
+                                     TrUserData).
 
 skip_varint_CommandEndTxn(<<1:1, _:7, Rest/binary>>,
                           Z1,
@@ -34138,8 +35258,9 @@ skip_varint_CommandEndTxn(<<1:1, _:7, Rest/binary>>,
                           F@_2,
                           F@_3,
                           F@_4,
+                          F@_5,
                           TrUserData) ->
-    skip_varint_CommandEndTxn(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData);
+    skip_varint_CommandEndTxn(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData);
 skip_varint_CommandEndTxn(<<0:1, _:7, Rest/binary>>,
                           Z1,
                           Z2,
@@ -34147,8 +35268,9 @@ skip_varint_CommandEndTxn(<<0:1, _:7, Rest/binary>>,
                           F@_2,
                           F@_3,
                           F@_4,
+                          F@_5,
                           TrUserData) ->
-    dfp_read_field_def_CommandEndTxn(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData).
+    dfp_read_field_def_CommandEndTxn(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
 
 skip_length_delimited_CommandEndTxn(<<1:1, X:7, Rest/binary>>,
                                     N,
@@ -34157,6 +35279,7 @@ skip_length_delimited_CommandEndTxn(<<1:1, X:7, Rest/binary>>,
                                     F@_2,
                                     F@_3,
                                     F@_4,
+                                    F@_5,
                                     TrUserData)
     when N < 57 ->
     skip_length_delimited_CommandEndTxn(Rest,
@@ -34166,6 +35289,7 @@ skip_length_delimited_CommandEndTxn(<<1:1, X:7, Rest/binary>>,
                                         F@_2,
                                         F@_3,
                                         F@_4,
+                                        F@_5,
                                         TrUserData);
 skip_length_delimited_CommandEndTxn(<<0:1, X:7, Rest/binary>>,
                                     N,
@@ -34174,14 +35298,15 @@ skip_length_delimited_CommandEndTxn(<<0:1, X:7, Rest/binary>>,
                                     F@_2,
                                     F@_3,
                                     F@_4,
+                                    F@_5,
                                     TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
-    dfp_read_field_def_CommandEndTxn(Rest2, 0, 0, F@_1, F@_2, F@_3, F@_4, TrUserData).
+    dfp_read_field_def_CommandEndTxn(Rest2, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
 
-skip_group_CommandEndTxn(Bin, FNum, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData) ->
+skip_group_CommandEndTxn(Bin, FNum, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
-    dfp_read_field_def_CommandEndTxn(Rest, 0, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData).
+    dfp_read_field_def_CommandEndTxn(Rest, 0, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
 
 skip_32_CommandEndTxn(<<_:32, Rest/binary>>,
                       Z1,
@@ -34190,8 +35315,9 @@ skip_32_CommandEndTxn(<<_:32, Rest/binary>>,
                       F@_2,
                       F@_3,
                       F@_4,
+                      F@_5,
                       TrUserData) ->
-    dfp_read_field_def_CommandEndTxn(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData).
+    dfp_read_field_def_CommandEndTxn(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
 
 skip_64_CommandEndTxn(<<_:64, Rest/binary>>,
                       Z1,
@@ -34200,8 +35326,9 @@ skip_64_CommandEndTxn(<<_:64, Rest/binary>>,
                       F@_2,
                       F@_3,
                       F@_4,
+                      F@_5,
                       TrUserData) ->
-    dfp_read_field_def_CommandEndTxn(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, TrUserData).
+    dfp_read_field_def_CommandEndTxn(Rest, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5, TrUserData).
 
 decode_msg_CommandEndTxnResponse(Bin, TrUserData) ->
     dfp_read_field_def_CommandEndTxnResponse(Bin,
@@ -34813,6 +35940,7 @@ decode_msg_CommandEndTxnOnPartition(Bin, TrUserData) ->
                                                 id(undefined, TrUserData),
                                                 id(undefined, TrUserData),
                                                 id(undefined, TrUserData),
+                                                id([], TrUserData),
                                                 TrUserData).
 
 dfp_read_field_def_CommandEndTxnOnPartition(<<8, Rest/binary>>,
@@ -34823,6 +35951,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<8, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData) ->
     d_field_CommandEndTxnOnPartition_request_id(Rest,
                                                 Z1,
@@ -34832,6 +35961,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<8, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData);
 dfp_read_field_def_CommandEndTxnOnPartition(<<16, Rest/binary>>,
                                             Z1,
@@ -34841,6 +35971,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<16, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData) ->
     d_field_CommandEndTxnOnPartition_txnid_least_bits(Rest,
                                                       Z1,
@@ -34850,6 +35981,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<16, Rest/binary>>,
                                                       F@_3,
                                                       F@_4,
                                                       F@_5,
+                                                      F@_6,
                                                       TrUserData);
 dfp_read_field_def_CommandEndTxnOnPartition(<<24, Rest/binary>>,
                                             Z1,
@@ -34859,6 +35991,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<24, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData) ->
     d_field_CommandEndTxnOnPartition_txnid_most_bits(Rest,
                                                      Z1,
@@ -34868,6 +36001,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<24, Rest/binary>>,
                                                      F@_3,
                                                      F@_4,
                                                      F@_5,
+                                                     F@_6,
                                                      TrUserData);
 dfp_read_field_def_CommandEndTxnOnPartition(<<34, Rest/binary>>,
                                             Z1,
@@ -34877,6 +36011,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<34, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData) ->
     d_field_CommandEndTxnOnPartition_topic(Rest,
                                            Z1,
@@ -34886,6 +36021,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<34, Rest/binary>>,
                                            F@_3,
                                            F@_4,
                                            F@_5,
+                                           F@_6,
                                            TrUserData);
 dfp_read_field_def_CommandEndTxnOnPartition(<<40, Rest/binary>>,
                                             Z1,
@@ -34895,6 +36031,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<40, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData) ->
     d_field_CommandEndTxnOnPartition_txn_action(Rest,
                                                 Z1,
@@ -34904,6 +36041,27 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<40, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
+                                                TrUserData);
+dfp_read_field_def_CommandEndTxnOnPartition(<<50, Rest/binary>>,
+                                            Z1,
+                                            Z2,
+                                            F@_1,
+                                            F@_2,
+                                            F@_3,
+                                            F@_4,
+                                            F@_5,
+                                            F@_6,
+                                            TrUserData) ->
+    d_field_CommandEndTxnOnPartition_message_id(Rest,
+                                                Z1,
+                                                Z2,
+                                                F@_1,
+                                                F@_2,
+                                                F@_3,
+                                                F@_4,
+                                                F@_5,
+                                                F@_6,
                                                 TrUserData);
 dfp_read_field_def_CommandEndTxnOnPartition(<<>>,
                                             0,
@@ -34913,12 +36071,14 @@ dfp_read_field_def_CommandEndTxnOnPartition(<<>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
-                                            _) ->
+                                            R1,
+                                            TrUserData) ->
     #'CommandEndTxnOnPartition'{request_id = F@_1,
                                 txnid_least_bits = F@_2,
                                 txnid_most_bits = F@_3,
                                 topic = F@_4,
-                                txn_action = F@_5};
+                                txn_action = F@_5,
+                                message_id = lists_reverse(R1, TrUserData)};
 dfp_read_field_def_CommandEndTxnOnPartition(Other,
                                             Z1,
                                             Z2,
@@ -34927,6 +36087,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(Other,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData) ->
     dg_read_field_def_CommandEndTxnOnPartition(Other,
                                                Z1,
@@ -34936,6 +36097,7 @@ dfp_read_field_def_CommandEndTxnOnPartition(Other,
                                                F@_3,
                                                F@_4,
                                                F@_5,
+                                               F@_6,
                                                TrUserData).
 
 dg_read_field_def_CommandEndTxnOnPartition(<<1:1, X:7, Rest/binary>>,
@@ -34946,6 +36108,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<1:1, X:7, Rest/binary>>,
                                            F@_3,
                                            F@_4,
                                            F@_5,
+                                           F@_6,
                                            TrUserData)
     when N < 32 - 7 ->
     dg_read_field_def_CommandEndTxnOnPartition(Rest,
@@ -34956,6 +36119,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<1:1, X:7, Rest/binary>>,
                                                F@_3,
                                                F@_4,
                                                F@_5,
+                                               F@_6,
                                                TrUserData);
 dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                            N,
@@ -34965,6 +36129,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                            F@_3,
                                            F@_4,
                                            F@_5,
+                                           F@_6,
                                            TrUserData) ->
     Key = X bsl N + Acc,
     case Key of
@@ -34977,6 +36142,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                         F@_3,
                                                         F@_4,
                                                         F@_5,
+                                                        F@_6,
                                                         TrUserData);
         16 ->
             d_field_CommandEndTxnOnPartition_txnid_least_bits(Rest,
@@ -34987,6 +36153,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                               F@_3,
                                                               F@_4,
                                                               F@_5,
+                                                              F@_6,
                                                               TrUserData);
         24 ->
             d_field_CommandEndTxnOnPartition_txnid_most_bits(Rest,
@@ -34997,6 +36164,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                              F@_3,
                                                              F@_4,
                                                              F@_5,
+                                                             F@_6,
                                                              TrUserData);
         34 ->
             d_field_CommandEndTxnOnPartition_topic(Rest,
@@ -35007,6 +36175,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                    F@_3,
                                                    F@_4,
                                                    F@_5,
+                                                   F@_6,
                                                    TrUserData);
         40 ->
             d_field_CommandEndTxnOnPartition_txn_action(Rest,
@@ -35017,6 +36186,18 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                         F@_3,
                                                         F@_4,
                                                         F@_5,
+                                                        F@_6,
+                                                        TrUserData);
+        50 ->
+            d_field_CommandEndTxnOnPartition_message_id(Rest,
+                                                        0,
+                                                        0,
+                                                        F@_1,
+                                                        F@_2,
+                                                        F@_3,
+                                                        F@_4,
+                                                        F@_5,
+                                                        F@_6,
                                                         TrUserData);
         _ ->
             case Key band 7 of
@@ -35029,6 +36210,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                          F@_3,
                                                          F@_4,
                                                          F@_5,
+                                                         F@_6,
                                                          TrUserData);
                 1 ->
                     skip_64_CommandEndTxnOnPartition(Rest,
@@ -35039,6 +36221,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                      F@_3,
                                                      F@_4,
                                                      F@_5,
+                                                     F@_6,
                                                      TrUserData);
                 2 ->
                     skip_length_delimited_CommandEndTxnOnPartition(Rest,
@@ -35049,6 +36232,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                                    F@_3,
                                                                    F@_4,
                                                                    F@_5,
+                                                                   F@_6,
                                                                    TrUserData);
                 3 ->
                     skip_group_CommandEndTxnOnPartition(Rest,
@@ -35059,6 +36243,7 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                         F@_3,
                                                         F@_4,
                                                         F@_5,
+                                                        F@_6,
                                                         TrUserData);
                 5 ->
                     skip_32_CommandEndTxnOnPartition(Rest,
@@ -35069,15 +36254,26 @@ dg_read_field_def_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                      F@_3,
                                                      F@_4,
                                                      F@_5,
+                                                     F@_6,
                                                      TrUserData)
             end
     end;
-dg_read_field_def_CommandEndTxnOnPartition(<<>>, 0, 0, F@_1, F@_2, F@_3, F@_4, F@_5, _) ->
+dg_read_field_def_CommandEndTxnOnPartition(<<>>,
+                                           0,
+                                           0,
+                                           F@_1,
+                                           F@_2,
+                                           F@_3,
+                                           F@_4,
+                                           F@_5,
+                                           R1,
+                                           TrUserData) ->
     #'CommandEndTxnOnPartition'{request_id = F@_1,
                                 txnid_least_bits = F@_2,
                                 txnid_most_bits = F@_3,
                                 topic = F@_4,
-                                txn_action = F@_5}.
+                                txn_action = F@_5,
+                                message_id = lists_reverse(R1, TrUserData)}.
 
 d_field_CommandEndTxnOnPartition_request_id(<<1:1, X:7, Rest/binary>>,
                                             N,
@@ -35087,6 +36283,7 @@ d_field_CommandEndTxnOnPartition_request_id(<<1:1, X:7, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData)
     when N < 57 ->
     d_field_CommandEndTxnOnPartition_request_id(Rest,
@@ -35097,6 +36294,7 @@ d_field_CommandEndTxnOnPartition_request_id(<<1:1, X:7, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData);
 d_field_CommandEndTxnOnPartition_request_id(<<0:1, X:7, Rest/binary>>,
                                             N,
@@ -35106,6 +36304,7 @@ d_field_CommandEndTxnOnPartition_request_id(<<0:1, X:7, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_CommandEndTxnOnPartition(RestF,
@@ -35116,6 +36315,7 @@ d_field_CommandEndTxnOnPartition_request_id(<<0:1, X:7, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData).
 
 d_field_CommandEndTxnOnPartition_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
@@ -35126,6 +36326,7 @@ d_field_CommandEndTxnOnPartition_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
                                                   F@_3,
                                                   F@_4,
                                                   F@_5,
+                                                  F@_6,
                                                   TrUserData)
     when N < 57 ->
     d_field_CommandEndTxnOnPartition_txnid_least_bits(Rest,
@@ -35136,6 +36337,7 @@ d_field_CommandEndTxnOnPartition_txnid_least_bits(<<1:1, X:7, Rest/binary>>,
                                                       F@_3,
                                                       F@_4,
                                                       F@_5,
+                                                      F@_6,
                                                       TrUserData);
 d_field_CommandEndTxnOnPartition_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                                   N,
@@ -35145,6 +36347,7 @@ d_field_CommandEndTxnOnPartition_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                                   F@_3,
                                                   F@_4,
                                                   F@_5,
+                                                  F@_6,
                                                   TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_CommandEndTxnOnPartition(RestF,
@@ -35155,6 +36358,7 @@ d_field_CommandEndTxnOnPartition_txnid_least_bits(<<0:1, X:7, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData).
 
 d_field_CommandEndTxnOnPartition_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
@@ -35165,6 +36369,7 @@ d_field_CommandEndTxnOnPartition_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
                                                  F@_3,
                                                  F@_4,
                                                  F@_5,
+                                                 F@_6,
                                                  TrUserData)
     when N < 57 ->
     d_field_CommandEndTxnOnPartition_txnid_most_bits(Rest,
@@ -35175,6 +36380,7 @@ d_field_CommandEndTxnOnPartition_txnid_most_bits(<<1:1, X:7, Rest/binary>>,
                                                      F@_3,
                                                      F@_4,
                                                      F@_5,
+                                                     F@_6,
                                                      TrUserData);
 d_field_CommandEndTxnOnPartition_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                                  N,
@@ -35184,6 +36390,7 @@ d_field_CommandEndTxnOnPartition_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                                  _,
                                                  F@_4,
                                                  F@_5,
+                                                 F@_6,
                                                  TrUserData) ->
     {NewFValue, RestF} = {id(X bsl N + Acc, TrUserData), Rest},
     dfp_read_field_def_CommandEndTxnOnPartition(RestF,
@@ -35194,6 +36401,7 @@ d_field_CommandEndTxnOnPartition_txnid_most_bits(<<0:1, X:7, Rest/binary>>,
                                                 NewFValue,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData).
 
 d_field_CommandEndTxnOnPartition_topic(<<1:1, X:7, Rest/binary>>,
@@ -35204,6 +36412,7 @@ d_field_CommandEndTxnOnPartition_topic(<<1:1, X:7, Rest/binary>>,
                                        F@_3,
                                        F@_4,
                                        F@_5,
+                                       F@_6,
                                        TrUserData)
     when N < 57 ->
     d_field_CommandEndTxnOnPartition_topic(Rest,
@@ -35214,6 +36423,7 @@ d_field_CommandEndTxnOnPartition_topic(<<1:1, X:7, Rest/binary>>,
                                            F@_3,
                                            F@_4,
                                            F@_5,
+                                           F@_6,
                                            TrUserData);
 d_field_CommandEndTxnOnPartition_topic(<<0:1, X:7, Rest/binary>>,
                                        N,
@@ -35223,6 +36433,7 @@ d_field_CommandEndTxnOnPartition_topic(<<0:1, X:7, Rest/binary>>,
                                        F@_3,
                                        _,
                                        F@_5,
+                                       F@_6,
                                        TrUserData) ->
     {NewFValue, RestF} =
         begin
@@ -35238,6 +36449,7 @@ d_field_CommandEndTxnOnPartition_topic(<<0:1, X:7, Rest/binary>>,
                                                 F@_3,
                                                 NewFValue,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData).
 
 d_field_CommandEndTxnOnPartition_txn_action(<<1:1, X:7, Rest/binary>>,
@@ -35248,6 +36460,7 @@ d_field_CommandEndTxnOnPartition_txn_action(<<1:1, X:7, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             F@_5,
+                                            F@_6,
                                             TrUserData)
     when N < 57 ->
     d_field_CommandEndTxnOnPartition_txn_action(Rest,
@@ -35258,6 +36471,7 @@ d_field_CommandEndTxnOnPartition_txn_action(<<1:1, X:7, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData);
 d_field_CommandEndTxnOnPartition_txn_action(<<0:1, X:7, Rest/binary>>,
                                             N,
@@ -35267,6 +36481,7 @@ d_field_CommandEndTxnOnPartition_txn_action(<<0:1, X:7, Rest/binary>>,
                                             F@_3,
                                             F@_4,
                                             _,
+                                            F@_6,
                                             TrUserData) ->
     {NewFValue, RestF} =
         {id(d_enum_TxnAction(begin
@@ -35283,6 +36498,55 @@ d_field_CommandEndTxnOnPartition_txn_action(<<0:1, X:7, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 NewFValue,
+                                                F@_6,
+                                                TrUserData).
+
+d_field_CommandEndTxnOnPartition_message_id(<<1:1, X:7, Rest/binary>>,
+                                            N,
+                                            Acc,
+                                            F@_1,
+                                            F@_2,
+                                            F@_3,
+                                            F@_4,
+                                            F@_5,
+                                            F@_6,
+                                            TrUserData)
+    when N < 57 ->
+    d_field_CommandEndTxnOnPartition_message_id(Rest,
+                                                N + 7,
+                                                X bsl N + Acc,
+                                                F@_1,
+                                                F@_2,
+                                                F@_3,
+                                                F@_4,
+                                                F@_5,
+                                                F@_6,
+                                                TrUserData);
+d_field_CommandEndTxnOnPartition_message_id(<<0:1, X:7, Rest/binary>>,
+                                            N,
+                                            Acc,
+                                            F@_1,
+                                            F@_2,
+                                            F@_3,
+                                            F@_4,
+                                            F@_5,
+                                            Prev,
+                                            TrUserData) ->
+    {NewFValue, RestF} =
+        begin
+            Len = X bsl N + Acc,
+            <<Bs:Len/binary, Rest2/binary>> = Rest,
+            {id(decode_msg_MessageIdData(Bs, TrUserData), TrUserData), Rest2}
+        end,
+    dfp_read_field_def_CommandEndTxnOnPartition(RestF,
+                                                0,
+                                                0,
+                                                F@_1,
+                                                F@_2,
+                                                F@_3,
+                                                F@_4,
+                                                F@_5,
+                                                cons(NewFValue, Prev, TrUserData),
                                                 TrUserData).
 
 skip_varint_CommandEndTxnOnPartition(<<1:1, _:7, Rest/binary>>,
@@ -35293,6 +36557,7 @@ skip_varint_CommandEndTxnOnPartition(<<1:1, _:7, Rest/binary>>,
                                      F@_3,
                                      F@_4,
                                      F@_5,
+                                     F@_6,
                                      TrUserData) ->
     skip_varint_CommandEndTxnOnPartition(Rest,
                                          Z1,
@@ -35302,6 +36567,7 @@ skip_varint_CommandEndTxnOnPartition(<<1:1, _:7, Rest/binary>>,
                                          F@_3,
                                          F@_4,
                                          F@_5,
+                                         F@_6,
                                          TrUserData);
 skip_varint_CommandEndTxnOnPartition(<<0:1, _:7, Rest/binary>>,
                                      Z1,
@@ -35311,6 +36577,7 @@ skip_varint_CommandEndTxnOnPartition(<<0:1, _:7, Rest/binary>>,
                                      F@_3,
                                      F@_4,
                                      F@_5,
+                                     F@_6,
                                      TrUserData) ->
     dfp_read_field_def_CommandEndTxnOnPartition(Rest,
                                                 Z1,
@@ -35320,6 +36587,7 @@ skip_varint_CommandEndTxnOnPartition(<<0:1, _:7, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData).
 
 skip_length_delimited_CommandEndTxnOnPartition(<<1:1, X:7, Rest/binary>>,
@@ -35330,6 +36598,7 @@ skip_length_delimited_CommandEndTxnOnPartition(<<1:1, X:7, Rest/binary>>,
                                                F@_3,
                                                F@_4,
                                                F@_5,
+                                               F@_6,
                                                TrUserData)
     when N < 57 ->
     skip_length_delimited_CommandEndTxnOnPartition(Rest,
@@ -35340,6 +36609,7 @@ skip_length_delimited_CommandEndTxnOnPartition(<<1:1, X:7, Rest/binary>>,
                                                    F@_3,
                                                    F@_4,
                                                    F@_5,
+                                                   F@_6,
                                                    TrUserData);
 skip_length_delimited_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                N,
@@ -35349,6 +36619,7 @@ skip_length_delimited_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                F@_3,
                                                F@_4,
                                                F@_5,
+                                               F@_6,
                                                TrUserData) ->
     Length = X bsl N + Acc,
     <<_:Length/binary, Rest2/binary>> = Rest,
@@ -35360,6 +36631,7 @@ skip_length_delimited_CommandEndTxnOnPartition(<<0:1, X:7, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData).
 
 skip_group_CommandEndTxnOnPartition(Bin,
@@ -35370,6 +36642,7 @@ skip_group_CommandEndTxnOnPartition(Bin,
                                     F@_3,
                                     F@_4,
                                     F@_5,
+                                    F@_6,
                                     TrUserData) ->
     {_, Rest} = read_group(Bin, FNum),
     dfp_read_field_def_CommandEndTxnOnPartition(Rest,
@@ -35380,6 +36653,7 @@ skip_group_CommandEndTxnOnPartition(Bin,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData).
 
 skip_32_CommandEndTxnOnPartition(<<_:32, Rest/binary>>,
@@ -35390,6 +36664,7 @@ skip_32_CommandEndTxnOnPartition(<<_:32, Rest/binary>>,
                                  F@_3,
                                  F@_4,
                                  F@_5,
+                                 F@_6,
                                  TrUserData) ->
     dfp_read_field_def_CommandEndTxnOnPartition(Rest,
                                                 Z1,
@@ -35399,6 +36674,7 @@ skip_32_CommandEndTxnOnPartition(<<_:32, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData).
 
 skip_64_CommandEndTxnOnPartition(<<_:64, Rest/binary>>,
@@ -35409,6 +36685,7 @@ skip_64_CommandEndTxnOnPartition(<<_:64, Rest/binary>>,
                                  F@_3,
                                  F@_4,
                                  F@_5,
+                                 F@_6,
                                  TrUserData) ->
     dfp_read_field_def_CommandEndTxnOnPartition(Rest,
                                                 Z1,
@@ -35418,6 +36695,7 @@ skip_64_CommandEndTxnOnPartition(<<_:64, Rest/binary>>,
                                                 F@_3,
                                                 F@_4,
                                                 F@_5,
+                                                F@_6,
                                                 TrUserData).
 
 decode_msg_CommandEndTxnOnPartitionResponse(Bin, TrUserData) ->
@@ -41076,6 +42354,16 @@ skip_64_BaseCommand(<<_:64, Rest/binary>>, Z1, Z2, F@_1, F@_2, F@_3, F@_4, F@_5,
     'Timestamp';
 'd_enum_Schema.Type'(15) ->
     'KeyValue';
+'d_enum_Schema.Type'(16) ->
+    'Instant';
+'d_enum_Schema.Type'(17) ->
+    'LocalDate';
+'d_enum_Schema.Type'(18) ->
+    'LocalTime';
+'d_enum_Schema.Type'(19) ->
+    'LocalDateTime';
+'d_enum_Schema.Type'(20) ->
+    'ProtobufNative';
 'd_enum_Schema.Type'(V) ->
     V.
 
@@ -41136,6 +42424,12 @@ d_enum_ServerError(20) ->
     'TransactionCoordinatorNotFound';
 d_enum_ServerError(21) ->
     'InvalidTxnStatus';
+d_enum_ServerError(22) ->
+    'NotAllowedError';
+d_enum_ServerError(23) ->
+    'TransactionConflict';
+d_enum_ServerError(24) ->
+    'TransactionNotFound';
 d_enum_ServerError(V) ->
     V.
 
@@ -41549,12 +42843,14 @@ merge_msg_Schema(#'Schema'{properties = PFproperties},
 
 merge_msg_MessageIdData(#'MessageIdData'{partition = PFpartition,
                                          batch_index = PFbatch_index,
-                                         ack_set = PFack_set},
+                                         ack_set = PFack_set,
+                                         batch_size = PFbatch_size},
                         #'MessageIdData'{ledgerId = NFledgerId,
                                          entryId = NFentryId,
                                          partition = NFpartition,
                                          batch_index = NFbatch_index,
-                                         ack_set = NFack_set},
+                                         ack_set = NFack_set,
+                                         batch_size = NFbatch_size},
                         TrUserData) ->
     #'MessageIdData'{ledgerId = NFledgerId,
                      entryId = NFentryId,
@@ -41577,6 +42873,12 @@ merge_msg_MessageIdData(#'MessageIdData'{partition = PFpartition,
                                 NFack_set;
                             NFack_set == undefined ->
                                 PFack_set
+                         end,
+                     batch_size =
+                         if NFbatch_size =:= undefined ->
+                                PFbatch_size;
+                            true ->
+                                NFbatch_size
                          end}.
 
 -compile({nowarn_unused_function, merge_msg_KeyValue/3}).
@@ -42657,14 +43959,16 @@ merge_msg_CommandAck(#'CommandAck'{message_id = PFmessage_id,
                                    validation_error = PFvalidation_error,
                                    properties = PFproperties,
                                    txnid_least_bits = PFtxnid_least_bits,
-                                   txnid_most_bits = PFtxnid_most_bits},
+                                   txnid_most_bits = PFtxnid_most_bits,
+                                   request_id = PFrequest_id},
                      #'CommandAck'{consumer_id = NFconsumer_id,
                                    ack_type = NFack_type,
                                    message_id = NFmessage_id,
                                    validation_error = NFvalidation_error,
                                    properties = NFproperties,
                                    txnid_least_bits = NFtxnid_least_bits,
-                                   txnid_most_bits = NFtxnid_most_bits},
+                                   txnid_most_bits = NFtxnid_most_bits,
+                                   request_id = NFrequest_id},
                      TrUserData) ->
     #'CommandAck'{consumer_id = NFconsumer_id,
                   ack_type = NFack_type,
@@ -42701,6 +44005,12 @@ merge_msg_CommandAck(#'CommandAck'{message_id = PFmessage_id,
                              PFtxnid_most_bits;
                          true ->
                              NFtxnid_most_bits
+                      end,
+                  request_id =
+                      if NFrequest_id =:= undefined ->
+                             PFrequest_id;
+                         true ->
+                             NFrequest_id
                       end}.
 
 -compile({nowarn_unused_function, merge_msg_CommandAckResponse/3}).
@@ -42708,12 +44018,14 @@ merge_msg_CommandAck(#'CommandAck'{message_id = PFmessage_id,
 merge_msg_CommandAckResponse(#'CommandAckResponse'{txnid_least_bits = PFtxnid_least_bits,
                                                    txnid_most_bits = PFtxnid_most_bits,
                                                    error = PFerror,
-                                                   message = PFmessage},
+                                                   message = PFmessage,
+                                                   request_id = PFrequest_id},
                              #'CommandAckResponse'{consumer_id = NFconsumer_id,
                                                    txnid_least_bits = NFtxnid_least_bits,
                                                    txnid_most_bits = NFtxnid_most_bits,
                                                    error = NFerror,
-                                                   message = NFmessage},
+                                                   message = NFmessage,
+                                                   request_id = NFrequest_id},
                              _) ->
     #'CommandAckResponse'{consumer_id = NFconsumer_id,
                           txnid_least_bits =
@@ -42739,6 +44051,12 @@ merge_msg_CommandAckResponse(#'CommandAckResponse'{txnid_least_bits = PFtxnid_le
                                      PFmessage;
                                  true ->
                                      NFmessage
+                              end,
+                          request_id =
+                              if NFrequest_id =:= undefined ->
+                                     PFrequest_id;
+                                 true ->
+                                     NFrequest_id
                               end}.
 
 -compile({nowarn_unused_function, merge_msg_CommandActiveConsumerChange/3}).
@@ -43066,17 +44384,34 @@ merge_msg_CommandGetLastMessageId(#'CommandGetLastMessageId'{},
 
 merge_msg_CommandGetLastMessageIdResponse(#'CommandGetLastMessageIdResponse'{last_message_id
                                                                                  =
-                                                                                 PFlast_message_id},
+                                                                                 PFlast_message_id,
+                                                                             consumer_mark_delete_position
+                                                                                 =
+                                                                                 PFconsumer_mark_delete_position},
                                           #'CommandGetLastMessageIdResponse'{last_message_id =
                                                                                  NFlast_message_id,
                                                                              request_id =
-                                                                                 NFrequest_id},
+                                                                                 NFrequest_id,
+                                                                             consumer_mark_delete_position
+                                                                                 =
+                                                                                 NFconsumer_mark_delete_position},
                                           TrUserData) ->
     #'CommandGetLastMessageIdResponse'{last_message_id =
                                            merge_msg_MessageIdData(PFlast_message_id,
                                                                    NFlast_message_id,
                                                                    TrUserData),
-                                       request_id = NFrequest_id}.
+                                       request_id = NFrequest_id,
+                                       consumer_mark_delete_position =
+                                           if PFconsumer_mark_delete_position /= undefined,
+                                              NFconsumer_mark_delete_position /= undefined ->
+                                                  merge_msg_MessageIdData(PFconsumer_mark_delete_position,
+                                                                          NFconsumer_mark_delete_position,
+                                                                          TrUserData);
+                                              PFconsumer_mark_delete_position == undefined ->
+                                                  NFconsumer_mark_delete_position;
+                                              NFconsumer_mark_delete_position == undefined ->
+                                                  PFconsumer_mark_delete_position
+                                           end}.
 
 -compile({nowarn_unused_function, merge_msg_CommandGetTopicsOfNamespace/3}).
 
@@ -43458,12 +44793,14 @@ merge_msg_CommandAddSubscriptionToTxnResponse(#'CommandAddSubscriptionToTxnRespo
 
 merge_msg_CommandEndTxn(#'CommandEndTxn'{txnid_least_bits = PFtxnid_least_bits,
                                          txnid_most_bits = PFtxnid_most_bits,
-                                         txn_action = PFtxn_action},
+                                         txn_action = PFtxn_action,
+                                         message_id = PFmessage_id},
                         #'CommandEndTxn'{request_id = NFrequest_id,
                                          txnid_least_bits = NFtxnid_least_bits,
                                          txnid_most_bits = NFtxnid_most_bits,
-                                         txn_action = NFtxn_action},
-                        _) ->
+                                         txn_action = NFtxn_action,
+                                         message_id = NFmessage_id},
+                        TrUserData) ->
     #'CommandEndTxn'{request_id = NFrequest_id,
                      txnid_least_bits =
                          if NFtxnid_least_bits =:= undefined ->
@@ -43482,6 +44819,14 @@ merge_msg_CommandEndTxn(#'CommandEndTxn'{txnid_least_bits = PFtxnid_least_bits,
                                 PFtxn_action;
                             true ->
                                 NFtxn_action
+                         end,
+                     message_id =
+                         if PFmessage_id /= undefined, NFmessage_id /= undefined ->
+                                'erlang_++'(PFmessage_id, NFmessage_id, TrUserData);
+                            PFmessage_id == undefined ->
+                                NFmessage_id;
+                            NFmessage_id == undefined ->
+                                PFmessage_id
                          end}.
 
 -compile({nowarn_unused_function, merge_msg_CommandEndTxnResponse/3}).
@@ -43529,14 +44874,16 @@ merge_msg_CommandEndTxnOnPartition(#'CommandEndTxnOnPartition'{txnid_least_bits 
                                                                    PFtxnid_least_bits,
                                                                txnid_most_bits = PFtxnid_most_bits,
                                                                topic = PFtopic,
-                                                               txn_action = PFtxn_action},
+                                                               txn_action = PFtxn_action,
+                                                               message_id = PFmessage_id},
                                    #'CommandEndTxnOnPartition'{request_id = NFrequest_id,
                                                                txnid_least_bits =
                                                                    NFtxnid_least_bits,
                                                                txnid_most_bits = NFtxnid_most_bits,
                                                                topic = NFtopic,
-                                                               txn_action = NFtxn_action},
-                                   _) ->
+                                                               txn_action = NFtxn_action,
+                                                               message_id = NFmessage_id},
+                                   TrUserData) ->
     #'CommandEndTxnOnPartition'{request_id = NFrequest_id,
                                 txnid_least_bits =
                                     if NFtxnid_least_bits =:= undefined ->
@@ -43561,6 +44908,14 @@ merge_msg_CommandEndTxnOnPartition(#'CommandEndTxnOnPartition'{txnid_least_bits 
                                            PFtxn_action;
                                        true ->
                                            NFtxn_action
+                                    end,
+                                message_id =
+                                    if PFmessage_id /= undefined, NFmessage_id /= undefined ->
+                                           'erlang_++'(PFmessage_id, NFmessage_id, TrUserData);
+                                       PFmessage_id == undefined ->
+                                           NFmessage_id;
+                                       NFmessage_id == undefined ->
+                                           PFmessage_id
                                     end}.
 
 -compile({nowarn_unused_function, merge_msg_CommandEndTxnOnPartitionResponse/3}).
@@ -44483,7 +45838,8 @@ v_msg_MessageIdData(#'MessageIdData'{ledgerId = F1,
                                      entryId = F2,
                                      partition = F3,
                                      batch_index = F4,
-                                     ack_set = F5},
+                                     ack_set = F5,
+                                     batch_size = F6},
                     Path,
                     TrUserData) ->
     v_type_uint64(F1, [ledgerId | Path], TrUserData),
@@ -44503,6 +45859,11 @@ v_msg_MessageIdData(#'MessageIdData'{ledgerId = F1,
            ok;
        true ->
            mk_type_error({invalid_list_of, int64}, F5, [ack_set | Path])
+    end,
+    if F6 == undefined ->
+           ok;
+       true ->
+           v_type_int32(F6, [batch_size | Path], TrUserData)
     end,
     ok;
 v_msg_MessageIdData(X, Path, _TrUserData) ->
@@ -45445,7 +46806,8 @@ v_msg_CommandAck(#'CommandAck'{consumer_id = F1,
                                validation_error = F4,
                                properties = F5,
                                txnid_least_bits = F6,
-                               txnid_most_bits = F7},
+                               txnid_most_bits = F7,
+                               request_id = F8},
                  Path,
                  TrUserData) ->
     v_type_uint64(F1, [consumer_id | Path], TrUserData),
@@ -45477,6 +46839,11 @@ v_msg_CommandAck(#'CommandAck'{consumer_id = F1,
        true ->
            v_type_uint64(F7, [txnid_most_bits | Path], TrUserData)
     end,
+    if F8 == undefined ->
+           ok;
+       true ->
+           v_type_uint64(F8, [request_id | Path], TrUserData)
+    end,
     ok;
 v_msg_CommandAck(X, Path, _TrUserData) ->
     mk_type_error({expected_msg, 'CommandAck'}, X, Path).
@@ -45489,7 +46856,8 @@ v_msg_CommandAckResponse(#'CommandAckResponse'{consumer_id = F1,
                                                txnid_least_bits = F2,
                                                txnid_most_bits = F3,
                                                error = F4,
-                                               message = F5},
+                                               message = F5,
+                                               request_id = F6},
                          Path,
                          TrUserData) ->
     v_type_uint64(F1, [consumer_id | Path], TrUserData),
@@ -45512,6 +46880,11 @@ v_msg_CommandAckResponse(#'CommandAckResponse'{consumer_id = F1,
            ok;
        true ->
            v_type_string(F5, [message | Path], TrUserData)
+    end,
+    if F6 == undefined ->
+           ok;
+       true ->
+           v_type_uint64(F6, [request_id | Path], TrUserData)
     end,
     ok;
 v_msg_CommandAckResponse(X, Path, _TrUserData) ->
@@ -45851,11 +47224,18 @@ v_msg_CommandGetLastMessageId(X, Path, _TrUserData) ->
 
 v_msg_CommandGetLastMessageIdResponse(#'CommandGetLastMessageIdResponse'{last_message_id =
                                                                              F1,
-                                                                         request_id = F2},
+                                                                         request_id = F2,
+                                                                         consumer_mark_delete_position
+                                                                             = F3},
                                       Path,
                                       TrUserData) ->
     v_msg_MessageIdData(F1, [last_message_id | Path], TrUserData),
     v_type_uint64(F2, [request_id | Path], TrUserData),
+    if F3 == undefined ->
+           ok;
+       true ->
+           v_msg_MessageIdData(F3, [consumer_mark_delete_position | Path], TrUserData)
+    end,
     ok;
 v_msg_CommandGetLastMessageIdResponse(X, Path, _TrUserData) ->
     mk_type_error({expected_msg, 'CommandGetLastMessageIdResponse'}, X, Path).
@@ -46219,7 +47599,8 @@ v_msg_CommandAddSubscriptionToTxnResponse(X, Path, _TrUserData) ->
 v_msg_CommandEndTxn(#'CommandEndTxn'{request_id = F1,
                                      txnid_least_bits = F2,
                                      txnid_most_bits = F3,
-                                     txn_action = F4},
+                                     txn_action = F4,
+                                     message_id = F5},
                     Path,
                     TrUserData) ->
     v_type_uint64(F1, [request_id | Path], TrUserData),
@@ -46237,6 +47618,12 @@ v_msg_CommandEndTxn(#'CommandEndTxn'{request_id = F1,
            ok;
        true ->
            v_enum_TxnAction(F4, [txn_action | Path], TrUserData)
+    end,
+    if is_list(F5) ->
+           _ = [v_msg_MessageIdData(Elem, [message_id | Path], TrUserData) || Elem <- F5],
+           ok;
+       true ->
+           mk_type_error({invalid_list_of, {msg, 'MessageIdData'}}, F5, [message_id | Path])
     end,
     ok;
 v_msg_CommandEndTxn(X, Path, _TrUserData) ->
@@ -46286,7 +47673,8 @@ v_msg_CommandEndTxnOnPartition(#'CommandEndTxnOnPartition'{request_id = F1,
                                                            txnid_least_bits = F2,
                                                            txnid_most_bits = F3,
                                                            topic = F4,
-                                                           txn_action = F5},
+                                                           txn_action = F5,
+                                                           message_id = F6},
                                Path,
                                TrUserData) ->
     v_type_uint64(F1, [request_id | Path], TrUserData),
@@ -46309,6 +47697,12 @@ v_msg_CommandEndTxnOnPartition(#'CommandEndTxnOnPartition'{request_id = F1,
            ok;
        true ->
            v_enum_TxnAction(F5, [txn_action | Path], TrUserData)
+    end,
+    if is_list(F6) ->
+           _ = [v_msg_MessageIdData(Elem, [message_id | Path], TrUserData) || Elem <- F6],
+           ok;
+       true ->
+           mk_type_error({invalid_list_of, {msg, 'MessageIdData'}}, F6, [message_id | Path])
     end,
     ok;
 v_msg_CommandEndTxnOnPartition(X, Path, _TrUserData) ->
@@ -46796,6 +48190,16 @@ v_msg_BaseCommand(X, Path, _TrUserData) ->
     ok;
 'v_enum_Schema.Type'('KeyValue', _Path, _TrUserData) ->
     ok;
+'v_enum_Schema.Type'('Instant', _Path, _TrUserData) ->
+    ok;
+'v_enum_Schema.Type'('LocalDate', _Path, _TrUserData) ->
+    ok;
+'v_enum_Schema.Type'('LocalTime', _Path, _TrUserData) ->
+    ok;
+'v_enum_Schema.Type'('LocalDateTime', _Path, _TrUserData) ->
+    ok;
+'v_enum_Schema.Type'('ProtobufNative', _Path, _TrUserData) ->
+    ok;
 'v_enum_Schema.Type'(V, Path, TrUserData) when is_integer(V) ->
     v_type_sint32(V, Path, TrUserData);
 'v_enum_Schema.Type'(X, Path, _TrUserData) ->
@@ -46867,6 +48271,12 @@ v_enum_ServerError('ConsumerAssignError', _Path, _TrUserData) ->
 v_enum_ServerError('TransactionCoordinatorNotFound', _Path, _TrUserData) ->
     ok;
 v_enum_ServerError('InvalidTxnStatus', _Path, _TrUserData) ->
+    ok;
+v_enum_ServerError('NotAllowedError', _Path, _TrUserData) ->
+    ok;
+v_enum_ServerError('TransactionConflict', _Path, _TrUserData) ->
+    ok;
+v_enum_ServerError('TransactionNotFound', _Path, _TrUserData) ->
     ok;
 v_enum_ServerError(V, Path, TrUserData) when is_integer(V) ->
     v_type_sint32(V, Path, TrUserData);
@@ -47325,7 +48735,12 @@ get_msg_defs() ->
        {'Date', 12},
        {'Time', 13},
        {'Timestamp', 14},
-       {'KeyValue', 15}]},
+       {'KeyValue', 15},
+       {'Instant', 16},
+       {'LocalDate', 17},
+       {'LocalTime', 18},
+       {'LocalDateTime', 19},
+       {'ProtobufNative', 20}]},
      {{enum, 'CompressionType'},
       [{'NONE', 0}, {'LZ4', 1}, {'ZLIB', 2}, {'ZSTD', 3}, {'SNAPPY', 4}]},
      {{enum, 'ServerError'},
@@ -47350,7 +48765,10 @@ get_msg_defs() ->
        {'IncompatibleSchema', 18},
        {'ConsumerAssignError', 19},
        {'TransactionCoordinatorNotFound', 20},
-       {'InvalidTxnStatus', 21}]},
+       {'InvalidTxnStatus', 21},
+       {'NotAllowedError', 22},
+       {'TransactionConflict', 23},
+       {'TransactionNotFound', 24}]},
      {{enum, 'AuthMethod'},
       [{'AuthMethodNone', 0}, {'AuthMethodYcaV1', 1}, {'AuthMethodAthens', 2}]},
      {{enum, 'ProtocolVersion'},
@@ -47461,6 +48879,12 @@ get_msg_defs() ->
               rnum = 6,
               type = int64,
               occurrence = repeated,
+              opts = []},
+       #field{name = batch_size,
+              fnum = 6,
+              rnum = 7,
+              type = int32,
+              occurrence = optional,
               opts = []}]},
      {{msg, 'KeyValue'},
       [#field{name = key,
@@ -47640,13 +49064,13 @@ get_msg_defs() ->
               rnum = 21,
               type = uint64,
               occurrence = optional,
-              opts = [{default, 0}]},
+              opts = []},
        #field{name = txnid_most_bits,
               fnum = 23,
               rnum = 22,
               type = uint64,
               occurrence = optional,
-              opts = [{default, 0}]},
+              opts = []},
        #field{name = highest_sequence_id,
               fnum = 24,
               rnum = 23,
@@ -48379,7 +49803,13 @@ get_msg_defs() ->
               rnum = 8,
               type = uint64,
               occurrence = optional,
-              opts = [{default, 0}]}]},
+              opts = [{default, 0}]},
+       #field{name = request_id,
+              fnum = 8,
+              rnum = 9,
+              type = uint64,
+              occurrence = optional,
+              opts = []}]},
      {{msg, 'CommandAckResponse'},
       [#field{name = consumer_id,
               fnum = 1,
@@ -48409,6 +49839,12 @@ get_msg_defs() ->
               fnum = 5,
               rnum = 6,
               type = string,
+              occurrence = optional,
+              opts = []},
+       #field{name = request_id,
+              fnum = 6,
+              rnum = 7,
+              type = uint64,
               occurrence = optional,
               opts = []}]},
      {{msg, 'CommandActiveConsumerChange'},
@@ -48708,6 +50144,12 @@ get_msg_defs() ->
               rnum = 3,
               type = uint64,
               occurrence = required,
+              opts = []},
+       #field{name = consumer_mark_delete_position,
+              fnum = 3,
+              rnum = 4,
+              type = {msg, 'MessageIdData'},
+              occurrence = optional,
               opts = []}]},
      {{msg, 'CommandGetTopicsOfNamespace'},
       [#field{name = request_id,
@@ -49034,6 +50476,12 @@ get_msg_defs() ->
               rnum = 5,
               type = {enum, 'TxnAction'},
               occurrence = optional,
+              opts = []},
+       #field{name = message_id,
+              fnum = 5,
+              rnum = 6,
+              type = {msg, 'MessageIdData'},
+              occurrence = repeated,
               opts = []}]},
      {{msg, 'CommandEndTxnResponse'},
       [#field{name = request_id,
@@ -49096,6 +50544,12 @@ get_msg_defs() ->
               rnum = 6,
               type = {enum, 'TxnAction'},
               occurrence = optional,
+              opts = []},
+       #field{name = message_id,
+              fnum = 6,
+              rnum = 7,
+              type = {msg, 'MessageIdData'},
+              occurrence = repeated,
               opts = []}]},
      {{msg, 'CommandEndTxnOnPartitionResponse'},
       [#field{name = request_id,
@@ -49639,6 +51093,12 @@ find_msg_def('MessageIdData') ->
             rnum = 6,
             type = int64,
             occurrence = repeated,
+            opts = []},
+     #field{name = batch_size,
+            fnum = 6,
+            rnum = 7,
+            type = int32,
+            occurrence = optional,
             opts = []}];
 find_msg_def('KeyValue') ->
     [#field{name = key,
@@ -49818,13 +51278,13 @@ find_msg_def('MessageMetadata') ->
             rnum = 21,
             type = uint64,
             occurrence = optional,
-            opts = [{default, 0}]},
+            opts = []},
      #field{name = txnid_most_bits,
             fnum = 23,
             rnum = 22,
             type = uint64,
             occurrence = optional,
-            opts = [{default, 0}]},
+            opts = []},
      #field{name = highest_sequence_id,
             fnum = 24,
             rnum = 23,
@@ -50557,7 +52017,13 @@ find_msg_def('CommandAck') ->
             rnum = 8,
             type = uint64,
             occurrence = optional,
-            opts = [{default, 0}]}];
+            opts = [{default, 0}]},
+     #field{name = request_id,
+            fnum = 8,
+            rnum = 9,
+            type = uint64,
+            occurrence = optional,
+            opts = []}];
 find_msg_def('CommandAckResponse') ->
     [#field{name = consumer_id,
             fnum = 1,
@@ -50587,6 +52053,12 @@ find_msg_def('CommandAckResponse') ->
             fnum = 5,
             rnum = 6,
             type = string,
+            occurrence = optional,
+            opts = []},
+     #field{name = request_id,
+            fnum = 6,
+            rnum = 7,
+            type = uint64,
             occurrence = optional,
             opts = []}];
 find_msg_def('CommandActiveConsumerChange') ->
@@ -50889,6 +52361,12 @@ find_msg_def('CommandGetLastMessageIdResponse') ->
             rnum = 3,
             type = uint64,
             occurrence = required,
+            opts = []},
+     #field{name = consumer_mark_delete_position,
+            fnum = 3,
+            rnum = 4,
+            type = {msg, 'MessageIdData'},
+            occurrence = optional,
             opts = []}];
 find_msg_def('CommandGetTopicsOfNamespace') ->
     [#field{name = request_id,
@@ -51215,6 +52693,12 @@ find_msg_def('CommandEndTxn') ->
             rnum = 5,
             type = {enum, 'TxnAction'},
             occurrence = optional,
+            opts = []},
+     #field{name = message_id,
+            fnum = 5,
+            rnum = 6,
+            type = {msg, 'MessageIdData'},
+            occurrence = repeated,
             opts = []}];
 find_msg_def('CommandEndTxnResponse') ->
     [#field{name = request_id,
@@ -51277,6 +52761,12 @@ find_msg_def('CommandEndTxnOnPartition') ->
             rnum = 6,
             type = {enum, 'TxnAction'},
             occurrence = optional,
+            opts = []},
+     #field{name = message_id,
+            fnum = 6,
+            rnum = 7,
+            type = {msg, 'MessageIdData'},
+            occurrence = repeated,
             opts = []}];
 find_msg_def('CommandEndTxnOnPartitionResponse') ->
     [#field{name = request_id,
@@ -51703,7 +53193,12 @@ find_enum_def('Schema.Type') ->
      {'Date', 12},
      {'Time', 13},
      {'Timestamp', 14},
-     {'KeyValue', 15}];
+     {'KeyValue', 15},
+     {'Instant', 16},
+     {'LocalDate', 17},
+     {'LocalTime', 18},
+     {'LocalDateTime', 19},
+     {'ProtobufNative', 20}];
 find_enum_def('CompressionType') ->
     [{'NONE', 0}, {'LZ4', 1}, {'ZLIB', 2}, {'ZSTD', 3}, {'SNAPPY', 4}];
 find_enum_def('ServerError') ->
@@ -51728,7 +53223,10 @@ find_enum_def('ServerError') ->
      {'IncompatibleSchema', 18},
      {'ConsumerAssignError', 19},
      {'TransactionCoordinatorNotFound', 20},
-     {'InvalidTxnStatus', 21}];
+     {'InvalidTxnStatus', 21},
+     {'NotAllowedError', 22},
+     {'TransactionConflict', 23},
+     {'TransactionNotFound', 24}];
 find_enum_def('AuthMethod') ->
     [{'AuthMethodNone', 0}, {'AuthMethodYcaV1', 1}, {'AuthMethodAthens', 2}];
 find_enum_def('ProtocolVersion') ->
@@ -51884,7 +53382,17 @@ enum_value_by_symbol('BaseCommand.Type', Sym) ->
 'enum_symbol_by_value_Schema.Type'(14) ->
     'Timestamp';
 'enum_symbol_by_value_Schema.Type'(15) ->
-    'KeyValue'.
+    'KeyValue';
+'enum_symbol_by_value_Schema.Type'(16) ->
+    'Instant';
+'enum_symbol_by_value_Schema.Type'(17) ->
+    'LocalDate';
+'enum_symbol_by_value_Schema.Type'(18) ->
+    'LocalTime';
+'enum_symbol_by_value_Schema.Type'(19) ->
+    'LocalDateTime';
+'enum_symbol_by_value_Schema.Type'(20) ->
+    'ProtobufNative'.
 
 'enum_value_by_symbol_Schema.Type'('None') ->
     0;
@@ -51917,7 +53425,17 @@ enum_value_by_symbol('BaseCommand.Type', Sym) ->
 'enum_value_by_symbol_Schema.Type'('Timestamp') ->
     14;
 'enum_value_by_symbol_Schema.Type'('KeyValue') ->
-    15.
+    15;
+'enum_value_by_symbol_Schema.Type'('Instant') ->
+    16;
+'enum_value_by_symbol_Schema.Type'('LocalDate') ->
+    17;
+'enum_value_by_symbol_Schema.Type'('LocalTime') ->
+    18;
+'enum_value_by_symbol_Schema.Type'('LocalDateTime') ->
+    19;
+'enum_value_by_symbol_Schema.Type'('ProtobufNative') ->
+    20.
 
 enum_symbol_by_value_CompressionType(0) ->
     'NONE';
@@ -51984,7 +53502,13 @@ enum_symbol_by_value_ServerError(19) ->
 enum_symbol_by_value_ServerError(20) ->
     'TransactionCoordinatorNotFound';
 enum_symbol_by_value_ServerError(21) ->
-    'InvalidTxnStatus'.
+    'InvalidTxnStatus';
+enum_symbol_by_value_ServerError(22) ->
+    'NotAllowedError';
+enum_symbol_by_value_ServerError(23) ->
+    'TransactionConflict';
+enum_symbol_by_value_ServerError(24) ->
+    'TransactionNotFound'.
 
 enum_value_by_symbol_ServerError('UnknownError') ->
     0;
@@ -52029,7 +53553,13 @@ enum_value_by_symbol_ServerError('ConsumerAssignError') ->
 enum_value_by_symbol_ServerError('TransactionCoordinatorNotFound') ->
     20;
 enum_value_by_symbol_ServerError('InvalidTxnStatus') ->
-    21.
+    21;
+enum_value_by_symbol_ServerError('NotAllowedError') ->
+    22;
+enum_value_by_symbol_ServerError('TransactionConflict') ->
+    23;
+enum_value_by_symbol_ServerError('TransactionNotFound') ->
+    24.
 
 enum_symbol_by_value_AuthMethod(0) ->
     'AuthMethodNone';
@@ -52511,8 +54041,7 @@ fqbin_to_msg_name(<<"pulsar.proto.CommandSubscribe">>) ->
     'CommandSubscribe';
 fqbin_to_msg_name(<<"pulsar.proto.CommandPartitionedTopicMetadata">>) ->
     'CommandPartitionedTopicMetadata';
-fqbin_to_msg_name(<<"pulsar.proto.CommandPartitionedTopicMetadataR"
-                    "esponse">>) ->
+fqbin_to_msg_name(<<"pulsar.proto.CommandPartitionedTopicMetadataResponse">>) ->
     'CommandPartitionedTopicMetadataResponse';
 fqbin_to_msg_name(<<"pulsar.proto.CommandLookupTopic">>) ->
     'CommandLookupTopic';
@@ -52546,8 +54075,7 @@ fqbin_to_msg_name(<<"pulsar.proto.CommandCloseProducer">>) ->
     'CommandCloseProducer';
 fqbin_to_msg_name(<<"pulsar.proto.CommandCloseConsumer">>) ->
     'CommandCloseConsumer';
-fqbin_to_msg_name(<<"pulsar.proto.CommandRedeliverUnacknowledgedMe"
-                    "ssages">>) ->
+fqbin_to_msg_name(<<"pulsar.proto.CommandRedeliverUnacknowledgedMessages">>) ->
     'CommandRedeliverUnacknowledgedMessages';
 fqbin_to_msg_name(<<"pulsar.proto.CommandSuccess">>) ->
     'CommandSuccess';
@@ -52645,8 +54173,7 @@ msg_name_to_fqbin('CommandSubscribe') ->
 msg_name_to_fqbin('CommandPartitionedTopicMetadata') ->
     <<"pulsar.proto.CommandPartitionedTopicMetadata">>;
 msg_name_to_fqbin('CommandPartitionedTopicMetadataResponse') ->
-    <<"pulsar.proto.CommandPartitionedTopicMetadataR"
-      "esponse">>;
+    <<"pulsar.proto.CommandPartitionedTopicMetadataResponse">>;
 msg_name_to_fqbin('CommandLookupTopic') ->
     <<"pulsar.proto.CommandLookupTopic">>;
 msg_name_to_fqbin('CommandLookupTopicResponse') ->
@@ -52680,8 +54207,7 @@ msg_name_to_fqbin('CommandCloseProducer') ->
 msg_name_to_fqbin('CommandCloseConsumer') ->
     <<"pulsar.proto.CommandCloseConsumer">>;
 msg_name_to_fqbin('CommandRedeliverUnacknowledgedMessages') ->
-    <<"pulsar.proto.CommandRedeliverUnacknowledgedMe"
-      "ssages">>;
+    <<"pulsar.proto.CommandRedeliverUnacknowledgedMessages">>;
 msg_name_to_fqbin('CommandSuccess') ->
     <<"pulsar.proto.CommandSuccess">>;
 msg_name_to_fqbin('CommandProducerSuccess') ->
@@ -52759,11 +54285,9 @@ fqbin_to_enum_name(<<"pulsar.proto.CommandSubscribe.SubType">>) ->
     'CommandSubscribe.SubType';
 fqbin_to_enum_name(<<"pulsar.proto.CommandSubscribe.InitialPosition">>) ->
     'CommandSubscribe.InitialPosition';
-fqbin_to_enum_name(<<"pulsar.proto.CommandPartitionedTopicMetadataR"
-                     "esponse.LookupType">>) ->
+fqbin_to_enum_name(<<"pulsar.proto.CommandPartitionedTopicMetadataResponse.LookupType">>) ->
     'CommandPartitionedTopicMetadataResponse.LookupType';
-fqbin_to_enum_name(<<"pulsar.proto.CommandLookupTopicResponse.Looku"
-                     "pType">>) ->
+fqbin_to_enum_name(<<"pulsar.proto.CommandLookupTopicResponse.LookupType">>) ->
     'CommandLookupTopicResponse.LookupType';
 fqbin_to_enum_name(<<"pulsar.proto.CommandAck.AckType">>) ->
     'CommandAck.AckType';
@@ -52795,11 +54319,9 @@ enum_name_to_fqbin('CommandSubscribe.SubType') ->
 enum_name_to_fqbin('CommandSubscribe.InitialPosition') ->
     <<"pulsar.proto.CommandSubscribe.InitialPosition">>;
 enum_name_to_fqbin('CommandPartitionedTopicMetadataResponse.LookupType') ->
-    <<"pulsar.proto.CommandPartitionedTopicMetadataR"
-      "esponse.LookupType">>;
+    <<"pulsar.proto.CommandPartitionedTopicMetadataResponse.LookupType">>;
 enum_name_to_fqbin('CommandLookupTopicResponse.LookupType') ->
-    <<"pulsar.proto.CommandLookupTopicResponse.Looku"
-      "pType">>;
+    <<"pulsar.proto.CommandLookupTopicResponse.LookupType">>;
 enum_name_to_fqbin('CommandAck.AckType') ->
     <<"pulsar.proto.CommandAck.AckType">>;
 enum_name_to_fqbin('CommandAck.ValidationError') ->
@@ -52933,8 +54455,7 @@ get_proto_by_msg_name_as_fqbin(<<"pulsar.proto.EncryptionKeys">>) ->
     "pulsar_api";
 get_proto_by_msg_name_as_fqbin(<<"pulsar.proto.CommandSuccess">>) ->
     "pulsar_api";
-get_proto_by_msg_name_as_fqbin(<<"pulsar.proto.CommandRedeliverUnacknowledgedMe"
-                                 "ssages">>) ->
+get_proto_by_msg_name_as_fqbin(<<"pulsar.proto.CommandRedeliverUnacknowledgedMessages">>) ->
     "pulsar_api";
 get_proto_by_msg_name_as_fqbin(<<"pulsar.proto.CommandReachedEndOfTopic">>) ->
     "pulsar_api";
@@ -52966,8 +54487,7 @@ get_proto_by_msg_name_as_fqbin(<<"pulsar.proto.CommandUnsubscribe">>) ->
     "pulsar_api";
 get_proto_by_msg_name_as_fqbin(<<"pulsar.proto.CommandSubscribe">>) ->
     "pulsar_api";
-get_proto_by_msg_name_as_fqbin(<<"pulsar.proto.CommandPartitionedTopicMetadataR"
-                                 "esponse">>) ->
+get_proto_by_msg_name_as_fqbin(<<"pulsar.proto.CommandPartitionedTopicMetadataResponse">>) ->
     "pulsar_api";
 get_proto_by_msg_name_as_fqbin(<<"pulsar.proto.CommandNewTxnResponse">>) ->
     "pulsar_api";
@@ -53050,11 +54570,9 @@ get_proto_by_enum_name_as_fqbin(<<"pulsar.proto.CompressionType">>) ->
     "pulsar_api";
 get_proto_by_enum_name_as_fqbin(<<"pulsar.proto.CommandSubscribe.SubType">>) ->
     "pulsar_api";
-get_proto_by_enum_name_as_fqbin(<<"pulsar.proto.CommandPartitionedTopicMetadataR"
-                                  "esponse.LookupType">>) ->
+get_proto_by_enum_name_as_fqbin(<<"pulsar.proto.CommandPartitionedTopicMetadataResponse.LookupType">>) ->
     "pulsar_api";
-get_proto_by_enum_name_as_fqbin(<<"pulsar.proto.CommandLookupTopicResponse.Looku"
-                                  "pType">>) ->
+get_proto_by_enum_name_as_fqbin(<<"pulsar.proto.CommandLookupTopicResponse.LookupType">>) ->
     "pulsar_api";
 get_proto_by_enum_name_as_fqbin(<<"pulsar.proto.CommandGetTopicsOfNamespace.Mode">>) ->
     "pulsar_api";

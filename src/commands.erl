@@ -47,9 +47,15 @@ new_send(ProducerId,
          NumMessages,
          DeliverAtTime,
          Payload) ->
-    SendCmd = #'CommandSend'{sequence_id = SequenceId, producer_id = ProducerId},
+    SendCmd =
+        #'CommandSend'{sequence_id = SequenceId,
+                       producer_id = ProducerId,
+                       txnid_least_bits = ?UNDEF,
+                       txnid_most_bits = ?UNDEF},
     Metadata =
-        #'MessageMetadata'{event_time = EventTime,
+        #'MessageMetadata'{txnid_least_bits = ?UNDEF,
+                           txnid_most_bits = ?UNDEF,
+                           event_time = EventTime,
                            sequence_id = SequenceId,
                            producer_name = ProducerName,
                            partition_key = PartitionKey,
@@ -64,6 +70,8 @@ new_send(ProducerId,
 
 new_ack(ConsumerId, #messageId{ledger_id = LedgerId, entry_id = EntryId}, Cumulative) ->
     #'CommandAck'{consumer_id = ConsumerId,
+                  txnid_least_bits = ?UNDEF,
+                  txnid_most_bits = ?UNDEF,
                   ack_type =
                       if Cumulative ->
                              'Cumulative';
@@ -74,6 +82,8 @@ new_ack(ConsumerId, #messageId{ledger_id = LedgerId, entry_id = EntryId}, Cumula
 
 new_ack(ConsumerId, [#messageId{} | _] = MessageIds) ->
     #'CommandAck'{consumer_id = ConsumerId,
+                  txnid_least_bits = ?UNDEF,
+                  txnid_most_bits = ?UNDEF,
                   ack_type = 'Individual',
                   message_id =
                       [#'MessageIdData'{ledgerId = LedgerId, entryId = EntryId}
