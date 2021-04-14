@@ -31,11 +31,6 @@
              'Time' |
              'Timestamp' |
              'KeyValue' |
-             'Instant' |
-             'LocalDate' |
-             'LocalTime' |
-             'LocalDateTime' |
-             'ProtobufNative' |
              integer(), % = 4, enum Schema.Type
          properties = [] :: [pulsar_api:'KeyValue'()] | undefined}). % = 5
 
@@ -49,9 +44,7 @@
         {ledgerId :: non_neg_integer(), % = 1, 32 bits
          entryId :: non_neg_integer(), % = 2, 32 bits
          partition = -1 :: integer() | undefined, % = 3, 32 bits
-         batch_index = -1 :: integer() | undefined, % = 4, 32 bits
-         ack_set = [] :: [integer()] | undefined, % = 5, 32 bits
-         batch_size :: integer() | undefined}). % = 6, 32 bits
+         batch_index = -1 :: integer() | undefined}). % = 4, 32 bits
 
 -endif.
 
@@ -127,15 +120,9 @@
          ordering_key :: iodata() | undefined, % = 18
          deliver_at_time :: integer() | undefined, % = 19, 32 bits
          marker_type :: integer() | undefined, % = 20, 32 bits
-         txnid_least_bits :: non_neg_integer() | undefined, % = 22, 32 bits
-         txnid_most_bits :: non_neg_integer() | undefined, % = 23, 32 bits
-         highest_sequence_id = 0 :: non_neg_integer() | undefined, % = 24, 32 bits
-         null_value = false :: boolean() | 0 | 1 | undefined, % = 25
-         uuid :: iodata() | undefined, % = 26
-         num_chunks_from_msg :: integer() | undefined, % = 27, 32 bits
-         total_chunk_msg_size :: integer() | undefined, % = 28, 32 bits
-         chunk_id :: integer() | undefined, % = 29, 32 bits
-         null_partition_key = false :: boolean() | 0 | 1 | undefined}). % = 30
+         txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 22, 32 bits
+         txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 23, 32 bits
+         highest_sequence_id = 0 :: non_neg_integer() | undefined}). % = 24, 32 bits
 
 -endif.
 
@@ -151,9 +138,7 @@
          event_time = 0 :: non_neg_integer() | undefined, % = 5, 32 bits
          partition_key_b64_encoded = false :: boolean() | 0 | 1 | undefined, % = 6
          ordering_key :: iodata() | undefined, % = 7
-         sequence_id :: non_neg_integer() | undefined, % = 8, 32 bits
-         null_value = false :: boolean() | 0 | 1 | undefined, % = 9
-         null_partition_key = false :: boolean() | 0 | 1 | undefined}). % = 10
+         sequence_id :: non_neg_integer() | undefined}). % = 8, 32 bits
 
 -endif.
 
@@ -303,14 +288,29 @@
              integer() |
              undefined, % = 3, enum CommandPartitionedTopicMetadataResponse.LookupType
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 4, enum ServerError
          message :: iodata() | undefined}). % = 5
 
@@ -326,8 +326,7 @@
          authoritative = false :: boolean() | 0 | 1 | undefined, % = 3
          original_principal :: iodata() | undefined, % = 4
          original_auth_data :: iodata() | undefined, % = 5
-         original_auth_method :: iodata() | undefined, % = 6
-         advertised_listener_name :: iodata() | undefined}). % = 7
+         original_auth_method :: iodata() | undefined}). % = 6
 
 -endif.
 
@@ -347,14 +346,29 @@
          request_id :: non_neg_integer(), % = 4, 32 bits
          authoritative = false :: boolean() | 0 | 1 | undefined, % = 5
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 6, enum ServerError
          message :: iodata() | undefined, % = 7
          proxy_through_service_url = false :: boolean() | 0 | 1 | undefined}). % = 8
@@ -388,8 +402,7 @@
          num_messages = 1 :: integer() | undefined, % = 3, 32 bits
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 4, 32 bits
          txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 5, 32 bits
-         highest_sequence_id = 0 :: non_neg_integer() | undefined, % = 6, 32 bits
-         is_chunk = false :: boolean() | 0 | 1 | undefined}). % = 7
+         highest_sequence_id = 0 :: non_neg_integer() | undefined}). % = 6, 32 bits
 
 -endif.
 
@@ -413,14 +426,28 @@
         {producer_id :: non_neg_integer(), % = 1, 32 bits
          sequence_id :: non_neg_integer(), % = 2, 32 bits
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
              integer(), % = 3, enum ServerError
          message :: iodata()}).         % = 4
 
@@ -433,8 +460,7 @@
 -record('CommandMessage',
         {consumer_id :: non_neg_integer(), % = 1, 32 bits
          message_id :: pulsar_api:'MessageIdData'(), % = 2
-         redelivery_count = 0 :: non_neg_integer() | undefined, % = 3, 32 bits
-         ack_set = [] :: [integer()] | undefined}). % = 4, 32 bits
+         redelivery_count = 0 :: non_neg_integer() | undefined}). % = 3, 32 bits
 
 -endif.
 
@@ -456,8 +482,7 @@
              undefined, % = 4, enum CommandAck.ValidationError
          properties = [] :: [pulsar_api:'KeyLongValue'()] | undefined, % = 5
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 6, 32 bits
-         txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 7, 32 bits
-         request_id :: non_neg_integer() | undefined}). % = 8, 32 bits
+         txnid_most_bits = 0 :: non_neg_integer() | undefined}). % = 7, 32 bits
 
 -endif.
 
@@ -470,17 +495,31 @@
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 2, 32 bits
          txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 3, 32 bits
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 4, enum ServerError
-         message :: iodata() | undefined, % = 5
-         request_id :: non_neg_integer() | undefined}). % = 6, 32 bits
+         message :: iodata() | undefined}). % = 5
 
 -endif.
 
@@ -594,14 +633,28 @@
 -record('CommandError',
         {request_id :: non_neg_integer(), % = 1, 32 bits
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
              integer(), % = 2, enum ServerError
          message :: iodata()}).         % = 3
 
@@ -640,14 +693,29 @@
 -record('CommandConsumerStatsResponse',
         {request_id :: non_neg_integer(), % = 1, 32 bits
          error_code ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 2, enum ServerError
          error_message :: iodata() | undefined, % = 3
          msgRateOut :: float() | integer() | infinity | '-infinity' | nan | undefined, % = 4
@@ -681,8 +749,7 @@
 
 -record('CommandGetLastMessageIdResponse',
         {last_message_id :: pulsar_api:'MessageIdData'(), % = 1
-         request_id :: non_neg_integer(), % = 2, 32 bits
-         consumer_mark_delete_position :: pulsar_api:'MessageIdData'() | undefined}). % = 3
+         request_id :: non_neg_integer()}). % = 2, 32 bits
 
 -endif.
 
@@ -730,14 +797,29 @@
 -record('CommandGetSchemaResponse',
         {request_id :: non_neg_integer(), % = 1, 32 bits
          error_code ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 2, enum ServerError
          error_message :: iodata() | undefined, % = 3
          schema :: pulsar_api:'Schema'() | undefined, % = 4
@@ -763,14 +845,29 @@
 -record('CommandGetOrCreateSchemaResponse',
         {request_id :: non_neg_integer(), % = 1, 32 bits
          error_code ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 2, enum ServerError
          error_message :: iodata() | undefined, % = 3
          schema_version :: iodata() | undefined}). % = 4
@@ -797,14 +894,29 @@
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 2, 32 bits
          txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 3, 32 bits
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 4, enum ServerError
          message :: iodata() | undefined}). % = 5
 
@@ -831,14 +943,29 @@
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 2, 32 bits
          txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 3, 32 bits
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 4, enum ServerError
          message :: iodata() | undefined}). % = 5
 
@@ -875,14 +1002,29 @@
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 2, 32 bits
          txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 3, 32 bits
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 4, enum ServerError
          message :: iodata() | undefined}). % = 5
 
@@ -896,8 +1038,7 @@
         {request_id :: non_neg_integer(), % = 1, 32 bits
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 2, 32 bits
          txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 3, 32 bits
-         txn_action :: 'COMMIT' | 'ABORT' | integer() | undefined, % = 4, enum TxnAction
-         message_id = [] :: [pulsar_api:'MessageIdData'()] | undefined}). % = 5
+         txn_action :: 'COMMIT' | 'ABORT' | integer() | undefined}). % = 4, enum TxnAction
 
 -endif.
 
@@ -910,14 +1051,29 @@
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 2, 32 bits
          txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 3, 32 bits
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 4, enum ServerError
          message :: iodata() | undefined}). % = 5
 
@@ -932,8 +1088,7 @@
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 2, 32 bits
          txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 3, 32 bits
          topic :: iodata() | undefined, % = 4
-         txn_action :: 'COMMIT' | 'ABORT' | integer() | undefined, % = 5, enum TxnAction
-         message_id = [] :: [pulsar_api:'MessageIdData'()] | undefined}). % = 6
+         txn_action :: 'COMMIT' | 'ABORT' | integer() | undefined}). % = 5, enum TxnAction
 
 -endif.
 
@@ -946,14 +1101,29 @@
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 2, 32 bits
          txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 3, 32 bits
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 4, enum ServerError
          message :: iodata() | undefined}). % = 5
 
@@ -981,14 +1151,29 @@
          txnid_least_bits = 0 :: non_neg_integer() | undefined, % = 2, 32 bits
          txnid_most_bits = 0 :: non_neg_integer() | undefined, % = 3, 32 bits
          error ::
-             'UnknownError' | 'MetadataError' | 'PersistenceError' | 'AuthenticationError' |
-             'AuthorizationError' | 'ConsumerBusy' | 'ServiceNotReady' |
-             'ProducerBlockedQuotaExceededError' | 'ProducerBlockedQuotaExceededException' |
-             'ChecksumError' | 'UnsupportedVersionError' | 'TopicNotFound' |
-             'SubscriptionNotFound' | 'ConsumerNotFound' | 'TooManyRequests' |
-             'TopicTerminatedError' | 'ProducerBusy' | 'InvalidTopicName' | 'IncompatibleSchema' |
-             'ConsumerAssignError' | 'TransactionCoordinatorNotFound' | 'InvalidTxnStatus' |
-             'NotAllowedError' | 'TransactionConflict' | 'TransactionNotFound' | integer() |
+             'UnknownError' |
+             'MetadataError' |
+             'PersistenceError' |
+             'AuthenticationError' |
+             'AuthorizationError' |
+             'ConsumerBusy' |
+             'ServiceNotReady' |
+             'ProducerBlockedQuotaExceededError' |
+             'ProducerBlockedQuotaExceededException' |
+             'ChecksumError' |
+             'UnsupportedVersionError' |
+             'TopicNotFound' |
+             'SubscriptionNotFound' |
+             'ConsumerNotFound' |
+             'TooManyRequests' |
+             'TopicTerminatedError' |
+             'ProducerBusy' |
+             'InvalidTopicName' |
+             'IncompatibleSchema' |
+             'ConsumerAssignError' |
+             'TransactionCoordinatorNotFound' |
+             'InvalidTxnStatus' |
+             integer() |
              undefined, % = 4, enum ServerError
          message :: iodata() | undefined}). % = 5
 
@@ -1013,8 +1198,7 @@
              'ADD_PARTITION_TO_TXN' | 'ADD_PARTITION_TO_TXN_RESPONSE' | 'ADD_SUBSCRIPTION_TO_TXN' |
              'ADD_SUBSCRIPTION_TO_TXN_RESPONSE' | 'END_TXN' | 'END_TXN_RESPONSE' |
              'END_TXN_ON_PARTITION' | 'END_TXN_ON_PARTITION_RESPONSE' | 'END_TXN_ON_SUBSCRIPTION' |
-             'END_TXN_ON_SUBSCRIPTION_RESPONSE' |
-             integer(), % = 1, enum BaseCommand.Type
+             'END_TXN_ON_SUBSCRIPTION_RESPONSE' | integer(), % = 1, enum BaseCommand.Type
          connect :: pulsar_api:'CommandConnect'() | undefined, % = 2
          connected :: pulsar_api:'CommandConnected'() | undefined, % = 3
          subscribe :: pulsar_api:'CommandSubscribe'() | undefined, % = 4
