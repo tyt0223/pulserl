@@ -209,7 +209,6 @@ init([#topic{} = Topic, Subscription, Opts]) ->
                    end,
                dead_letter_topic_messages =
                    if DeadLetterMaxRedeliveryCount > 0
-                      andalso is_pid(ParentConsumer)
                       andalso SubscriptionType == ?SHARED_SUBSCRIPTION ->
                           #{};
                       true ->
@@ -791,7 +790,6 @@ do_send_to_dead_letter_topic(Message,
                              #state{dead_letter_topic_name = Topic,
                                     dead_letter_topic_producer = ProducerPid} =
                                  State) ->
-    %% Child/Non-Partitioned consumer
     if is_pid(ProducerPid) ->
            do_send_to_dead_letter_topic1(Message, State);
        true ->
@@ -819,7 +817,9 @@ do_send_to_dead_letter_topic1(Message, State) ->
     #consumerMessage{id = MsgId,
                      partition_key = PartitionKey,
                      payload = Payload,
-                     properties = Properties} =
+                     properties = Properties,
+                     ordering_key = OrderingKey,
+                     event_time = EventTime} =
         Message,
     error_logger:warning_msg("Giving up processsing of message {legderId=~p"
                              ", entryId=~p, redliveryCount=~p, topic=~s} "
@@ -834,8 +834,12 @@ do_send_to_dead_letter_topic1(Message, State) ->
                               topic_utils:to_string(State#state.topic),
                               State#state.consumer_subscription_name,
                               self()]),
-    %% TODO - yang
-    ProdMessage = pulserl_producer:new_message(PartitionKey, Payload, Properties),
+    ProdMessage =
+        pulserl_producer:new_message(Payload,
+                                     [{partition_key, PartitionKey},
+                                      {ordering_key, OrderingKey},
+                                      {event_time, EventTime},
+                                      {properties, Properties}]),
     case pulserl_producer:sync_send(ProducerPid, ProdMessage, 15000) of
         {error, Reason} = Result ->
             error_logger:error_msg("Error sending to dead letter topic=~s "
@@ -850,8 +854,6 @@ do_send_to_dead_letter_topic1(Message, State) ->
     end.
 
 ack_and_clean_dead_letter_message(_, #state{state = ?UNDEF} = State) ->
-    State;
-ack_and_clean_dead_letter_message(_, #state{parent_consumer = ?UNDEF} = State) ->
     State;
 ack_and_clean_dead_letter_message(#consumerMessage{id = MsgId}, State) ->
     State2 = untrack_message(MsgId, false, State),

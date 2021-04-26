@@ -1198,7 +1198,8 @@
              'ADD_PARTITION_TO_TXN' | 'ADD_PARTITION_TO_TXN_RESPONSE' | 'ADD_SUBSCRIPTION_TO_TXN' |
              'ADD_SUBSCRIPTION_TO_TXN_RESPONSE' | 'END_TXN' | 'END_TXN_RESPONSE' |
              'END_TXN_ON_PARTITION' | 'END_TXN_ON_PARTITION_RESPONSE' | 'END_TXN_ON_SUBSCRIPTION' |
-             'END_TXN_ON_SUBSCRIPTION_RESPONSE' | integer(), % = 1, enum BaseCommand.Type
+             'END_TXN_ON_SUBSCRIPTION_RESPONSE' |
+             integer(), % = 1, enum BaseCommand.Type
          connect :: pulsar_api:'CommandConnect'() | undefined, % = 2
          connected :: pulsar_api:'CommandConnected'() | undefined, % = 3
          subscribe :: pulsar_api:'CommandSubscribe'() | undefined, % = 4

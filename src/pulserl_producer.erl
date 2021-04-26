@@ -147,7 +147,9 @@ create(#topic{} = Topic, Options) ->
         _ ->
             Options2 = validate_options(Options),
             supervisor:start_child(pulserl_producer_sup, [Topic, Options2])
-    end.
+    end;
+create(Topic, Options) ->
+    create(topic_utils:parse(Topic), Options).
 
 %%--------------------------------------------------------------------
 %% @doc
