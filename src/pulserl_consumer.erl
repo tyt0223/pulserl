@@ -518,7 +518,7 @@ handle_negative_acknowledgement(#messageId{} = MsgId,
                                        nack_messages_to_redeliver = NegAckMessages} =
                                     State) ->
                                         telemetry:execute(
-                                            [pulserl, nack,  count],
+                                            [pulserl, nack],
                                             #{count => 1},
                                             #{topic => Topic, subscription => SubscriptionName}
                                           ),                                    
@@ -548,7 +548,7 @@ redeliver_ack_timeout_messages(#state{topic = Topic, consumer_subscription_name 
     State3 =
         if MessagesToRedeliver2 /= [] ->
             telemetry:execute(
-                [pulserl, ack, timeout, count],
+                [pulserl, ack, timeout],
                 #{count => length(MessagesToRedeliver2)},
                 #{topic => Topic, subscription => SubscriptionName}
               ),
@@ -588,7 +588,7 @@ redeliver_messages(MessageIds,
     case pulserl_conn:send_simple_command(Cnx, Command) of
         {error, _} = Error ->
             telemetry:execute(
-                [pulserl, redelivery, error, count],
+                [pulserl, redelivery, error],
                 #{count => length(MessageIds)},
                 #{topic => Topic, subscription => SubscriptionName}
               ),
@@ -597,7 +597,7 @@ redeliver_messages(MessageIds,
                                    [Error]);
         _ ->
             telemetry:execute(
-                [pulserl, redelivery, count],
+                [pulserl, redelivery],
                 #{count => length(MessageIds)},
                 #{topic => Topic, subscription => SubscriptionName}
               ),
@@ -827,7 +827,7 @@ do_send_to_dead_letter_topic(Message,
                    do_send_to_dead_letter_topic1(Message, State2);
                {error, Reason} ->
                 telemetry:execute(
-                    [pulserl, dlq, error, count],
+                    [pulserl, dlq, error],
                     #{count => 1},
                     #{topic => Topic, subscription => SubscriptionName, dlq => DLQ}
                   ),
@@ -854,7 +854,7 @@ do_send_to_dead_letter_topic1(Message, State) ->
                      event_time = EventTime} =
         Message,
         telemetry:execute(
-            [pulserl, dlq, send, count],
+            [pulserl, dlq, send],
             #{count => 1},
             #{topic => Topic, subscription => SubscriptionName, dlq => DeadLetterTopic}
           ),
@@ -880,7 +880,7 @@ do_send_to_dead_letter_topic1(Message, State) ->
     case pulserl_producer:sync_send(ProducerPid, ProdMessage, 15000) of
         {error, Reason} = Result ->
             telemetry:execute(
-                [pulserl, dlq, error, count],
+                [pulserl, dlq, error],
                 #{count => 1},
                 #{topic => Topic, subscription => SubscriptionName, dlq => DeadLetterTopic}
               ),
