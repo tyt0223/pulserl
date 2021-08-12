@@ -17,7 +17,7 @@
 -export([start_link/3]).
 %% Consumer API
 -export([close/1, close/2, create/3, get_partitioned_consumers/1]).
--export([ack/3, nack/2, negative_ack/2, receive_message/1, redeliver_unack_messages/1,
+-export([ack/3, nack/2, negative_ack/2, receive_message/1, receive_messages/2, redeliver_unack_messages/1,
          seek/2]).
 %% gen_server callbacks
 -export([code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
@@ -45,9 +45,15 @@
 -define(ERROR_ACK_TYPE_NOT_ALLOWED, {error, consumer_ack_type_not_allowed}).
 
 receive_message(Pid) ->
-    case gen_server:call(Pid, ?RECEIVE_MESSAGE) of
+    case receive_messages(Pid, 1) of
+        [] -> false;
+        [Message] -> Message
+    end.
+
+receive_messages(Pid, N) ->
+    case gen_server:call(Pid, {?RECEIVE_MESSAGE, N}) of
         {redirect, Children} ->
-            receive_from_any(Children);
+            receive_from_any(Children, N);
         Other ->
             Other
     end.
@@ -99,12 +105,12 @@ close(Pid) ->
 close(Pid, AttemptRestart) ->
     gen_server:cast(Pid, {close, AttemptRestart}).
 
-receive_from_any([]) ->
+receive_from_any([], _) ->
     false;
-receive_from_any([Child | Rest]) ->
-    case receive_message(Child) of
+receive_from_any([Child | Rest], N) ->
+    case receive_messages(Child, N) of
         false ->
-            receive_from_any(Rest);
+            receive_from_any(Rest, N);
         Other ->
             Other
     end.
@@ -285,7 +291,7 @@ handle_call({negative_acknowledge, #messageId{topic = TopicStr} = MsgId},
         _ ->
             {reply, ok, handle_negative_acknowledgement(MsgId, State)}
     end;
-handle_call(?RECEIVE_MESSAGE, _From, #state{partition_count = PartitionCount} = State)
+handle_call({?RECEIVE_MESSAGE, _}, _From, #state{partition_count = PartitionCount} = State)
     when PartitionCount > 0 ->
     %% This consumer is the partition parent.
     %% Redirect the client to all the consumers.
@@ -297,8 +303,8 @@ handle_call(?RECEIVE_MESSAGE, _From, #state{partition_count = PartitionCount} = 
                 {{redirect, Pids}, State2}
         end,
     {reply, Replay, State3};
-handle_call(?RECEIVE_MESSAGE, _From, #state{} = State) ->
-    {Reply, State2} = handle_receive_message(State),
+handle_call({?RECEIVE_MESSAGE, Count}, _From, #state{} = State) ->
+    {Reply, State2} = handle_receive_message(State, Count),
     {reply, Reply, State2};
 handle_call({seek, Target}, _From, #state{parent_consumer = Parent} = State) ->
     Res = if not is_pid(Parent) ->
@@ -720,14 +726,21 @@ message_id_2_batch_ack_tracker_key(#messageId{ledger_id = LedgerId,
                                               entry_id = EntryId}) ->
     {LedgerId, EntryId}.
 
-handle_receive_message(#state{incoming_messages = MessageQueue} = State) ->
+handle_receive_message(#state{incoming_messages = MessageQueue} = State, Count) ->
+    {MessageQueue2, Acc, SoFar, State2} = get_messages_from_queue(MessageQueue, Count, [], 0, State),
+    State3 = increase_flow_permits(State2#state{incoming_messages = MessageQueue2}, SoFar),
+    {lists:reverse(Acc), State3}.
+
+get_messages_from_queue(MessageQueue, 0, Acc, SoFar, State) ->
+    {MessageQueue, Acc, SoFar, State};
+get_messages_from_queue(MessageQueue, Count, Acc, SoFar, State) ->
     case queue:out(MessageQueue) of
         {{value, Message}, MessageQueue2} ->
-            State2 = increase_flow_permits(State#state{incoming_messages = MessageQueue2}, 1),
-            {Message#consumerMessage{consumer = self()},
-             track_message(Message#consumerMessage.id, State2)};
+            Acc2 = [Message#consumerMessage{consumer = self()} | Acc],
+            State2 = track_message(Message#consumerMessage.id, State),
+            get_messages_from_queue(MessageQueue2, Count - 1, Acc2, SoFar + 1, State2);
         {empty, _} ->
-            {false, State}
+            {MessageQueue, Acc, SoFar, State}
     end.
 
 handle_messages(MetadataAndMessages, State) ->
