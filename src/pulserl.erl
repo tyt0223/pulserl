@@ -84,30 +84,57 @@ produce(PidOrTopic, #producerMessage{} = Msg) ->
 %% producer created for the specified topic; if none is found, one is created and
 %% register for future calls
 %%-------------------------------------------------------------------------------
-produce(PidOrTopic, #producerMessage{} = Msg, Callback)
-    when is_function(Callback) orelse Callback == ?UNDEF ->
-    if is_pid(PidOrTopic) ->
-           pulserl_producer:send(PidOrTopic, Msg, Callback);
-       true ->
-           case pulserl_instance_registry:get_producer(PidOrTopic,
-                                                       pulserl_app:def_producer_options())
-           of
-               {ok, Pid} ->
-                   produce(Pid, Msg, Callback);
-               Other ->
-                   Other
-           end
-    end;
+%%produce(PidOrTopic, #producerMessage{} = Msg, Callback)
+%%    when is_function(Callback) orelse Callback == ?UNDEF ->
+%%    if is_pid(PidOrTopic) ->
+%%           pulserl_producer:send(PidOrTopic, Msg, Callback);
+%%       true ->
+%%           case pulserl_instance_registry:get_producer(PidOrTopic,
+%%                                                       pulserl_app:def_producer_options())
+%%           of
+%%               {ok, Pid} ->
+%%                   produce(Pid, Msg, Callback);
+%%               Other ->
+%%                   Other
+%%           end
+%%    end;
 %%--------------------------------------------------------------------
 %% @doc publish a message asynchronously
 %%--------------------------------------------------------------------
 % produce(PidOrTopic, Payload, Options) when not is_record(Payload, producerMessage) ->
 %     produce(PidOrTopic, pulserl_producer:new_message(Payload, Options), ?UNDEF);
-produce(PidOrTopic, Payload, Options)
-    when is_list(Payload) or is_binary(Payload) andalso is_list(Options) ->
-    Callback = proplists:get_value(callback, Options, ?UNDEF),
-    Options2 = proplists:delete(callback, Options),
-    produce(PidOrTopic, Payload, Options2, Callback).
+%%produce(PidOrTopic, Payload, Options)
+%%    when is_list(Payload) or is_binary(Payload) andalso is_list(Options) ->
+%%    Callback = proplists:get_value(callback, Options, ?UNDEF),
+%%    Options2 = proplists:delete(callback, Options),
+%%    produce(PidOrTopic, Payload, Options2, Callback).
+
+produce(PidOrTopic, Value, Callback) when
+    (is_list(Value) or is_binary(Value)) andalso
+        (is_function(Callback) orelse Callback == ?UNDEF) ->
+    produce(PidOrTopic, pulserl_producer:new_message(Value), Callback);
+
+
+produce(PidOrTopic, Key, Value) when
+    (Key == ?UNDEF orelse is_list(Key) orelse is_binary(Key)) andalso
+        (is_list(Value) or is_binary(Value)) ->
+    produce(PidOrTopic, pulserl_producer:new_message(Key, Value), ?UNDEF);
+
+
+produce(PidOrTopic, #producerMessage{} = Msg, Callback)
+    when is_function(Callback) orelse Callback == ?UNDEF ->
+    if is_pid(PidOrTopic) ->
+        pulserl_producer:send(PidOrTopic, Msg, Callback);
+        true ->
+            case pulserl_instance_registry:get_producer(PidOrTopic,
+                pulserl_app:def_producer_options())
+            of
+                {ok, Pid} ->
+                    produce(Pid, Msg, Callback);
+                Other ->
+                    Other
+            end
+    end.
 
 %%--------------------------------------------------------------------
 %% @doc publish a message asynchronously
