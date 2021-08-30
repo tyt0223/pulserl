@@ -127,6 +127,7 @@ get_partitioned_consumers(Pid) ->
          %% end of consumer stuff
          partition_count = 0 :: non_neg_integer(),
          partition_to_child = #{}, child_to_partition = #{}, options :: list(), topic :: #topic{},
+          read_compacted :: integer(),
          %%
          parent_consumer :: pid(),
          re_init_attempts =
@@ -161,14 +162,15 @@ get_partitioned_consumers(Pid) ->
 
 init([#topic{} = Topic, Subscription, Opts]) ->
     process_flag(trap_exit, true),
-    ConsumerOpts = proplists:get_value(consumer, Opts, []),
+%%    ConsumerOpts = proplists:get_value(consumer, Opts, []),
     ParentConsumer = proplists:get_value(parent_consumer, Opts),
+    ConSumerName = proplists:get_value(consumer_name, Opts),
     QueueSize =
         erlang:max(
             proplists:get_value(queue_size, Opts, 1000), 1),
     SubscriptionName = Subscription,
     SubscriptionType =
-        proplists:get_value(subscription_type, ConsumerOpts, ?SHARED_SUBSCRIPTION),
+        proplists:get_value(subscription_type, Opts, ?SHARED_SUBSCRIPTION),
     NegAckDelay =
         erlang:max(
             proplists:get_value(nack_message_redelivery_delay, Opts, 60000), 60000),
@@ -182,15 +184,17 @@ init([#topic{} = Topic, Subscription, Opts]) ->
                parent_consumer = ParentConsumer,
                consumer_subscription_name = SubscriptionName,
                consumer_subscription_type = SubscriptionType,
-               consumer_name = proplists:get_value(name, ConsumerOpts),
-               consumer_properties = proplists:get_value(properties, ConsumerOpts, []),
-               consumer_priority_level = proplists:get_value(priority_level, ConsumerOpts, 0),
+                consumer_name = ConSumerName,
+%%               consumer_name = proplists:get_value(name, ConsumerOpts),
+               consumer_properties = proplists:get_value(properties, Opts, []),
+               consumer_priority_level = proplists:get_value(priority_level, Opts, 0),
                consumer_initial_position =
-                   proplists:get_value(initial_position, ConsumerOpts, ?POS_LATEST),
+                   proplists:get_value(initial_position, Opts, ?POS_LATEST),
                acknowledgments_send_timer_tick =
                    proplists:get_value(acknowledgments_send_tick, Opts, 100),
                max_pending_acknowledgments =
                    proplists:get_value(max_pending_acknowledgments, Opts, 1000),
+          read_compacted =  proplists:get_value(read_compacted, Opts, 0),
                queue_refill_threshold =
                    erlang:max(
                        proplists:get_value(queue_refill_threshold, Opts, QueueSize div 2), 1),
@@ -1043,6 +1047,7 @@ subscribe_to_topic(State) ->
         #'CommandSubscribe'{consumer_id = State#state.consumer_id,
                             subType = to_pulsar_subType(SubType),
                             consumer_name = State#state.consumer_name,
+          read_compacted = State#state.read_compacted,
                             topic = topic_utils:to_string(State#state.topic),
                             subscription = State#state.consumer_subscription_name,
                             metadata =
@@ -1261,6 +1266,10 @@ validate_options(Options) when is_list(Options) ->
                           erlwater_assertions:is_string(Opt);
                       ({dead_letter_topic_max_redeliver_count, _} = Opt) ->
                           erlwater_assertions:is_non_negative_int(Opt);
+                      ({read_compacted, _} = Opt) ->
+                        erlwater_assertions:is_non_negative_int(Opt);
+                      ({name, _} = Opt) ->
+                        erlwater_assertions:is_string(Opt);
                       (Opt) ->
                           error(unknown_consumer_options, [Opt])
                   end,
