@@ -13,7 +13,7 @@
 %% API
 -export([await/1, await/2]).
 -export([start_client/1, start_client/2]).
--export([start_consumer/2, start_consumer/3]).
+-export([start_consumer/3, start_consumer/4]).
 -export([start_producer/1, start_producer/2]).
 -export([produce/2, produce/3, produce/4, sync_produce/2, sync_produce/3]).
 -export([ack/1, ack/2, c_ack/1, c_ack/2, consume/2, nack/1, nack/2]).
@@ -38,18 +38,18 @@ start_client(ServiceUrl, ClientConfig) ->
 %% @doc Starts a consumer using the specified topic
 %% and default options
 %% -------------------------------------------------------------
-start_consumer(Topic, Subscription) ->
+start_consumer(Topic, SessionPid, Subscription) ->
     Options = pulserl_app:def_consumer_options(),
-    start_consumer(Topic, Subscription, Options).
+    start_consumer(Topic, SessionPid, Subscription, Options).
 
 %%-----------------------------------------------------------------
 %% @doc Starts a consumer using the specified topic and options
 %% ----------------------------------------------------------------
--spec start_consumer(Topic :: topic(), Options :: options()) ->
+-spec start_consumer(Topic :: topic(), SessionPid::pid(), Options :: options()) ->
                         {ok, pid()} | {error, term()}.
-start_consumer(Topic, Subscription, Options) ->
+start_consumer(Topic, SessionPid, Subscription, Options) ->
     Topic2 = topic_utils:parse(Topic),
-    pulserl_consumer:create(Topic2, Subscription, Options).
+    pulserl_consumer:create(Topic2, SessionPid, Subscription, Options).
 
 %%--------------------------------------------------------------
 %% @doc Starts a producer using the specified topic

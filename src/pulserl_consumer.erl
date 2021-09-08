@@ -14,11 +14,12 @@
 
 %% Producer API
 %% gen_Server API
--export([start_link/3]).
+-export([start_link/4]).
 %% Consumer API
--export([close/1, close/2, create/3, get_partitioned_consumers/1]).
+-export([close/1, close/2, create/4, get_partitioned_consumers/1]).
 -export([ack/3, nack/2, negative_ack/2, receive_message/1, redeliver_unack_messages/1,
          seek/2]).
+-export([track_message/2, untrack_message/3]).
 %% gen_server callbacks
 -export([code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
          terminate/2]).
@@ -81,17 +82,17 @@ call_associated_consumer(Pid, Request) ->
             Other
     end.
 
-create(#topic{} = Topic, Subscription, Options) ->
+create(#topic{} = Topic, SessionPid, Subscription, Options) ->
     case whereis(pulserl_client) of
         ?UNDEF ->
             ?ERROR_CLIENT_NOT_STARTED;
         _ ->
             Options2 = validate_options(Options),
-            supervisor:start_child(pulserl_consumer_sup, [Topic, Subscription, Options2])
+            supervisor:start_child(pulserl_consumer_sup, [Topic, SessionPid, Subscription, Options2])
     end.
 
-start_link(#topic{} = Topic, Subscription, Options) ->
-    gen_server:start_link(?MODULE, [Topic, Subscription, Options], []).
+start_link(#topic{} = Topic, SessionPid, Subscription, Options) ->
+    gen_server:start_link(?MODULE, [Topic, SessionPid, Subscription, Options], []).
 
 close(Pid) ->
     close(Pid, false).
@@ -119,6 +120,7 @@ get_partitioned_consumers(Pid) ->
 
 -record(state,
         {state, connection :: pid(), consumer_id :: integer(),
+          session_pid :: pid(),
          %% start of consumer stuff
          consumer_name :: string(),
          consumer_properties :: list(), consumer_initial_position :: atom(),
@@ -160,7 +162,7 @@ get_partitioned_consumers(Pid) ->
 %%% gen_server callbacks
 %%%===================================================================
 
-init([#topic{} = Topic, Subscription, Opts]) ->
+init([#topic{} = Topic, SessionPid, Subscription, Opts]) ->
     process_flag(trap_exit, true),
 %%    ConsumerOpts = proplists:get_value(consumer, Opts, []),
     ParentConsumer = proplists:get_value(parent_consumer, Opts),
@@ -178,7 +180,9 @@ init([#topic{} = Topic, Subscription, Opts]) ->
         erlang:max(
             proplists:get_value(dead_letter_topic_max_redeliver_count, Opts, 0), 0),
     State =
-        #state{topic = Topic,
+        #state{
+              topic = Topic,
+              session_pid = SessionPid,
                options = Opts,
                queue_size = QueueSize,
                parent_consumer = ParentConsumer,
@@ -735,34 +739,48 @@ handle_receive_message(#state{incoming_messages = MessageQueue} = State) ->
     end.
 
 handle_messages(MetadataAndMessages, State) ->
-    {NewMessageQueue, DeadLetterMsgMap} =
-        lists:foldl(fun(MetadataAndMessage, {MsgQueue, DeadLetterMsgMap}) ->
-                       MsgQueue1 =
-                           add_to_received_message_queue(MetadataAndMessage, MsgQueue, State),
-                       DeadLetterMsgMap1 =
-                           add_to_dead_letter_message_map(MetadataAndMessage,
-                                                          DeadLetterMsgMap,
-                                                          State),
-                       {MsgQueue1, DeadLetterMsgMap1}
-                    end,
-                    {State#state.incoming_messages, State#state.dead_letter_topic_messages},
-                    MetadataAndMessages),
-    State#state{incoming_messages = NewMessageQueue,
-                dead_letter_topic_messages = DeadLetterMsgMap}.
+  NewState =
+    lists:foldl(fun(MetadataAndMessage, State1) ->
+      State2 = add_to_received_message_queue(MetadataAndMessage, State1),
+      State3 = add_to_dead_letter_message_map(MetadataAndMessage, State2),
+      State3
+                end,
+      State,
+      MetadataAndMessages),
+  NewState.
 
 %% @Todo Handle `compacted_out` messages
-add_to_received_message_queue({_, Message}, MessageQueue, State) ->
-    RedeliveryCount = Message#consumerMessage.redelivery_count,
-    MaxRedeliveryCount = State#state.dead_letter_topic_max_redeliver_count,
-    if MaxRedeliveryCount > 0 andalso RedeliveryCount >= MaxRedeliveryCount ->
-           MessageQueue;
-       true ->
-           queue:in(Message, MessageQueue)
-    end.
+add_to_received_message_queue({_, Message},  #state{pending_acknowledgments = PendingAcknowledgments,
+  session_pid = SessionPid} = State) ->
+  MessageQueue = State#state.incoming_messages,
+  RedeliveryCount = Message#consumerMessage.redelivery_count,
+  MsgId = Message#consumerMessage.id,
+  MaxRedeliveryCount = State#state.dead_letter_topic_max_redeliver_count,
+  if MaxRedeliveryCount > 0 andalso RedeliveryCount >= MaxRedeliveryCount ->
+    MessageQueue;
+    true ->
+      case sets:is_empty(PendingAcknowledgments) of
+        true ->
+          PendingAcknowledgments2 = sets:add_element(MsgId, PendingAcknowledgments),
+          State2 = State#state{pending_acknowledgments = PendingAcknowledgments2},
+          SessionPid ! {pulserl, Message#consumerMessage{consumer = self()}},
+          track_message(Message#consumerMessage.id, State2);
+%%          State2;
+        false ->
+          NewMessageQueue = queue:in(Message, MessageQueue),
+          State#state{incoming_messages = NewMessageQueue}
+      end
+  end.
 
 %% Dead Letter Policy not enable
-add_to_dead_letter_message_map(_MetadataAndMessage, ?UNDEF, _State) ->
-    ?UNDEF;
+%% State#state.dead_letter_topic_messages
+add_to_dead_letter_message_map(MetadataAndMessage, State) ->
+  DeadLetterMsgMap = State#state.dead_letter_topic_messages,
+  add_to_dead_letter_message_map(MetadataAndMessage, DeadLetterMsgMap, State).
+
+add_to_dead_letter_message_map(_MetadataAndMessage, ?UNDEF, State) ->
+   State#state{dead_letter_topic_messages = ?UNDEF};
+%%    ?UNDEF;
 add_to_dead_letter_message_map({_,
                                 #consumerMessage{id = MsgId, redelivery_count = RedeliveryCount} =
                                     Msg},
@@ -770,9 +788,11 @@ add_to_dead_letter_message_map({_,
                                State) ->
     if RedeliveryCount >= State#state.dead_letter_topic_max_redeliver_count ->
            Messages = [Msg | maps:get(MsgId, DeadLetterMsgMap, [])],
-           maps:put(MsgId, Messages, DeadLetterMsgMap);
+        NewDeadLetterMsgMap = maps:put(MsgId, Messages, DeadLetterMsgMap),
+      State#state{dead_letter_topic_messages = NewDeadLetterMsgMap};
        true ->
-           DeadLetterMsgMap
+%%           DeadLetterMsgMap
+         State
     end.
 
 send_messages_to_dead_letter_topic(#state{dead_letter_topic_messages = ?UNDEF} = State) ->
