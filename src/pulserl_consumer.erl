@@ -757,7 +757,7 @@ add_to_received_message_queue({_, Message},  #state{pending_acknowledgments = Pe
   MsgId = Message#consumerMessage.id,
   MaxRedeliveryCount = State#state.dead_letter_topic_max_redeliver_count,
   if MaxRedeliveryCount > 0 andalso RedeliveryCount >= MaxRedeliveryCount ->
-    MessageQueue;
+    State;
     true ->
       case sets:is_empty(PendingAcknowledgments) of
         true ->
