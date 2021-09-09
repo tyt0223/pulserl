@@ -1349,7 +1349,7 @@ out_message_in_queue(#state{incoming_messages = MessageQueue, session_pid = Sess
   case queue:out(MessageQueue) of
     {{value, Message}, MessageQueue2} ->
       State2 = increase_flow_permits(State#state{incoming_messages = MessageQueue2}, 1),
-      SessionPid ! {pulserl, Message},
+      SessionPid ! {pulserl, Message#consumerMessage{consumer = self()}},
       track_message(Message#consumerMessage.id, State2);
     {empty, _} ->
       State
