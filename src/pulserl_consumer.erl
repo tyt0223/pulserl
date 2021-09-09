@@ -250,7 +250,8 @@ handle_call({acknowledge, #messageId{topic = Topic} = MsgId, _Cumulative},
             {reply, ?ERROR_ACK_ID_NOT_EXPECTED, State};
         _ ->
             {Reply, State2} = redirect_to_the_child_partition(MsgId, State),
-            {reply, Reply, State2}
+          State3 = out_message_in_queue(State2),
+          {reply, Reply, State3}
     end;
 %% The child/no-child-consumer
 handle_call({acknowledge, #messageId{topic = TopicStr} = MsgId, Cumulative},
@@ -263,7 +264,8 @@ handle_call({acknowledge, #messageId{topic = TopicStr} = MsgId, Cumulative},
             case topic_utils:is_persistent(Topic) of
                 true ->
                     {Reply, State2} = handle_acknowledgement(MsgId, Cumulative, State),
-                    {reply, Reply, State2};
+                  State3 = out_message_in_queue(State2),
+                  {reply, Reply, State3};
                 _ ->
                     {reply, ok, untrack_message(MsgId, Cumulative, State)}
             end
@@ -1342,3 +1344,13 @@ dead_letter_topic_name(Opts, Topic, SubscriptionName) ->
         Val ->
             Val
     end.
+
+out_message_in_queue(#state{incoming_messages = MessageQueue, session_pid = SessionPid} = State) ->
+  case queue:out(MessageQueue) of
+    {{value, Message}, MessageQueue2} ->
+      State2 = increase_flow_permits(State#state{incoming_messages = MessageQueue2}, 1),
+      SessionPid ! {pulserl, Message},
+      track_message(Message#consumerMessage.id, State2);
+    {empty, _} ->
+      State
+  end.
