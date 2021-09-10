@@ -752,21 +752,21 @@ handle_messages(MetadataAndMessages, State) ->
   NewState.
 
 %% @Todo Handle `compacted_out` messages
-add_to_received_message_queue({_, Message},  #state{pending_acknowledgments = PendingAcknowledgments,
+add_to_received_message_queue({_, Message},  #state{un_ack_message_ids = UnAckMgs,
   session_pid = SessionPid} = State) ->
   MessageQueue = State#state.incoming_messages,
   RedeliveryCount = Message#consumerMessage.redelivery_count,
-  MsgId = Message#consumerMessage.id,
+%%  MsgId = Message#consumerMessage.id,
   MaxRedeliveryCount = State#state.dead_letter_topic_max_redeliver_count,
   if MaxRedeliveryCount > 0 andalso RedeliveryCount >= MaxRedeliveryCount ->
     State;
     true ->
-      case sets:is_empty(PendingAcknowledgments) of
+      case maps:size(UnAckMgs) == 0 of
         true ->
-          PendingAcknowledgments2 = sets:add_element(MsgId, PendingAcknowledgments),
-          State2 = State#state{pending_acknowledgments = PendingAcknowledgments2},
+%%          PendingAcknowledgments2 = sets:add_element(MsgId, PendingAcknowledgments),
+%%          State2 = State#state{pending_acknowledgments = PendingAcknowledgments2},
           SessionPid ! {pulserl, Message#consumerMessage{consumer = self()}},
-          track_message(Message#consumerMessage.id, State2);
+          track_message(Message#consumerMessage.id, State);
 %%          State2;
         false ->
           NewMessageQueue = queue:in(Message, MessageQueue),
