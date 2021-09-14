@@ -149,6 +149,8 @@ to_type_and_field_pos(#'CommandProducer'{}) ->
     {'PRODUCER', #'BaseCommand'.producer};
 to_type_and_field_pos(#'CommandSubscribe'{}) ->
     {'SUBSCRIBE', #'BaseCommand'.subscribe};
+to_type_and_field_pos(#'CommandUnsubscribe'{}) ->
+    {'UNSUBSCRIBE', #'BaseCommand'.unsubscribe};
 to_type_and_field_pos(#'CommandSend'{}) ->
     {'SEND', #'BaseCommand'.send};
 to_type_and_field_pos(#'CommandFlow'{}) ->

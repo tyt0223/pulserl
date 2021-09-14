@@ -20,6 +20,7 @@
 -export([ack/3, nack/2, negative_ack/2, receive_message/1, redeliver_unack_messages/1,
          seek/2]).
 -export([track_message/2, untrack_message/3]).
+-export([unsubscribe_to_topic/1]).
 %% gen_server callbacks
 -export([code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
          terminate/2]).
@@ -1096,6 +1097,22 @@ subscribe_to_topic(State) ->
                                    topic_utils:to_string(State#state.topic)]),
             State
     end.
+
+
+unsubscribe_to_topic(State) ->
+  UnSubscribe =
+    #'CommandUnsubscribe'{consumer_id = State#state.consumer_id},
+  case pulserl_conn:send_simple_command(State#state.connection, UnSubscribe) of
+    {error, _} = Err ->
+      Err;
+    #'CommandSuccess'{} ->
+      error_logger:info_msg("Consumer=~p  unsubscribed "
+      "to topic=~s",
+        [self(),
+          topic_utils:to_string(State#state.topic)]),
+      State
+  end.
+
 
 send_flow_permits(#state{queue_size = QueueSize} = State) ->
     increase_flow_permits(State, QueueSize).
