@@ -17,7 +17,7 @@
 -export([start_link/4]).
 %% Consumer API
 -export([close/1, close/2, create/4, get_partitioned_consumers/1]).
--export([ack/3, nack/2, negative_ack/2, receive_message/1, redeliver_unack_messages/1,
+-export([ack/3, nack/2, negative_ack/2, receive_message/1, redeliver_unack_messages/1, unsubscribe/1,
          seek/2]).
 -export([track_message/2, untrack_message/3]).
 -export([unsubscribe_to_topic/1]).
@@ -37,6 +37,7 @@
 -define(PARTITIONS, partitions).
 -define(REINITIALIZE, reinitialize).
 -define(RECEIVE_MESSAGE, receive_message).
+-define(UNSUBSCRIBE, receive_message).
 -define(SEND_ACKNOWLEDGMENTS, send_acknowledgments).
 -define(ACKNOWLEDGMENT_TIMEOUT, acknowledgment_timeout).
 -define(REDELIVER_NACK_MESSAGES, redeliver_nack_messages).
@@ -53,6 +54,9 @@ receive_message(Pid) ->
         Other ->
             Other
     end.
+
+unsubscribe(Pid) ->
+  gen_server:call(Pid, ?UNSUBSCRIBE).
 
 ack(Pid, #messageId{} = MessageId, Cumulative) when is_pid(Pid) ->
     call_associated_consumer(Pid, {acknowledge, MessageId, Cumulative}).
@@ -311,6 +315,12 @@ handle_call(?RECEIVE_MESSAGE, _From, #state{partition_count = PartitionCount} = 
 handle_call(?RECEIVE_MESSAGE, _From, #state{} = State) ->
     {Reply, State2} = handle_receive_message(State),
     {reply, Reply, State2};
+
+handle_call(?UNSUBSCRIBE, _From, #state{} = State) ->
+  {Reply, State2} = unsubscribe_to_topic(State),
+  {reply, Reply, State2};
+
+
 handle_call({seek, Target}, _From, #state{parent_consumer = Parent} = State) ->
     Res = if not is_pid(Parent) ->
                  foreach_child(fun(Pid) -> seek(Pid, Target) end, State);
@@ -532,7 +542,7 @@ handle_negative_acknowledgement(#messageId{} = MsgId,
                                             [pulserl, nack],
                                             #{count => 1},
                                             #{topic => Topic, subscription => SubscriptionName}
-                                          ),                                    
+                                          ),
     NegAckMsg = {erlwater_time:milliseconds() + NegAckDelay, MsgId},
     State2 = State#state{nack_messages_to_redeliver = [NegAckMsg | NegAckMessages]},
     State3 = untrack_message(MsgId, false, State2),
@@ -838,7 +848,7 @@ send_message_to_dead_letter_topic3(Message,
 do_send_to_dead_letter_topic(Message,
                              #state{dead_letter_topic_name = DLQ,
                                     dead_letter_topic_producer = ProducerPid,
-                                topic = Topic, 
+                                topic = Topic,
                             consumer_subscription_name = SubscriptionName
                                 } =
                                  State) ->
@@ -1104,13 +1114,13 @@ unsubscribe_to_topic(State) ->
     #'CommandUnsubscribe'{consumer_id = State#state.consumer_id},
   case pulserl_conn:send_simple_command(State#state.connection, UnSubscribe) of
     {error, _} = Err ->
-      Err;
+      {{error, Err}, State};
     #'CommandSuccess'{} ->
       error_logger:info_msg("Consumer=~p  unsubscribed "
       "to topic=~s",
         [self(),
           topic_utils:to_string(State#state.topic)]),
-      State
+      {ok, State}
   end.
 
 
