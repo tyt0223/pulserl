@@ -18,6 +18,7 @@
 -export([produce/2, produce/3, produce/4, sync_produce/2, sync_produce/3]).
 -export([ack/1, ack/2, c_ack/1, c_ack/2, consume/2, nack/1, nack/2]).
 -export([ack_cumulative/1, ack_cumulative/2, negative_ack/1, negative_ack/2]).
+-export([unsubscribe/1]).
 %% Expose for demo purposes
 -export([start_consumption_in_background/2]).
 
@@ -203,6 +204,22 @@ consume(PidOrTopic, Subscription) ->
                    Other
            end
     end.
+
+unsubscribe(PidOrTopic) ->
+    if is_pid(PidOrTopic) ->
+        pulserl_consumer:unsubscribe(PidOrTopic);
+        true ->
+            case pulserl_instance_registry:get_consumer(PidOrTopic,
+                Subscription,
+                pulserl_app:def_consumer_options())
+            of
+                {ok, Pid} ->
+                    consume(Pid, Subscription);
+                Other ->
+                    Other
+            end
+    end.
+
 
 ack(#consumerMessage{consumer = Pid, id = Id}) ->
     pulserl:ack(Pid, Id).
