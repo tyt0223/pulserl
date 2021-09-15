@@ -35,7 +35,7 @@
          ordering_key :: key() | ?UNDEF,
          event_time :: integer() | ?UNDEF,
          publish_time :: integer(),
-         properties = #{} :: properties(),
+         properties = #{} :: pulserl_properties(),
          redelivery_count = 0 :: integer(),
          payload :: payload(),
          consumer :: pid()}).
@@ -43,7 +43,7 @@
         {partition_key :: key() | ?UNDEF,
          ordering_key :: key() | ?UNDEF,
          event_time :: integer() | ?UNDEF,
-         properties = [] :: properties(),
+         properties = [] :: pulserl_properties(),
          payload :: payload(),
          deliver_at_time :: integer() | ?UNDEF}).
 -record(clientConfig,
@@ -57,4 +57,4 @@
 -type payload() :: string() | binary().
 -type topic() :: string() | binary() | #topic{}.
 -type options() :: [{atom(), term()}, ...].
--type properties() :: map() | [{key(), value()}, ...].
+-type pulserl_properties() :: map() | [{key(), value()}, ...].
