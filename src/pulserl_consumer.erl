@@ -37,7 +37,7 @@
 -define(PARTITIONS, partitions).
 -define(REINITIALIZE, reinitialize).
 -define(RECEIVE_MESSAGE, receive_message).
--define(UNSUBSCRIBE, receive_message).
+-define(UNSUBSCRIBE, unsubscribe).
 -define(SEND_ACKNOWLEDGMENTS, send_acknowledgments).
 -define(ACKNOWLEDGMENT_TIMEOUT, acknowledgment_timeout).
 -define(REDELIVER_NACK_MESSAGES, redeliver_nack_messages).
