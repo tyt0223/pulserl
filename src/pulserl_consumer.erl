@@ -374,6 +374,7 @@ handle_cast({close, AttemptRestart}, #state{partition_count = PartitionCount} = 
                end,
            {noreply, State2};
        true ->
+           unsubscribe_to_topic(State),
            error_logger:info_msg("Consumer(~p) with subscription [~p] "
                                  "is permanelty closing",
                                  [self(), State#state.consumer_subscription_name]),
