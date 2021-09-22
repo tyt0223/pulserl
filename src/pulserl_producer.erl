@@ -846,6 +846,7 @@ do_cancel_timer(Data) ->
 close_children(State, AttemptRestart) ->
     lists:foreach(fun(Pid) -> pulserl_producer:close(Pid, AttemptRestart) end,
                   dict:fetch_keys(State#state.child_to_partition)),
+    close_to_topic(State),
     State#state{child_to_partition = dict:new(), partition_to_child = dict:new()}.
 
 %% Check whether this producer is:
@@ -906,3 +907,21 @@ validate_options(Options) when is_list(Options) ->
                   end,
                   Options),
     Options.
+
+
+
+
+
+close_to_topic(State) ->
+  CloseProducer =
+    #'CommandCloseProducer'{producer_id = State#state.producer_id},
+  case pulserl_conn:send_simple_command(State#state.connection, CloseProducer) of
+    {error, _} = Err ->
+      {{error, Err}, State};
+    #'CommandSuccess'{} ->
+      error_logger:info_msg("Producer=~p  close "
+      "to topic=~s",
+        [self(),
+          topic_utils:to_string(State#state.topic)]),
+      {ok, State}
+  end.

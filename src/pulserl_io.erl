@@ -147,10 +147,14 @@ to_type_and_field_pos(#'CommandPartitionedTopicMetadata'{}) ->
     {'PARTITIONED_METADATA', #'BaseCommand'.partitionMetadata};
 to_type_and_field_pos(#'CommandProducer'{}) ->
     {'PRODUCER', #'BaseCommand'.producer};
+to_type_and_field_pos(#'CommandCloseProducer'{}) ->
+    {'CLOSE_PRODUCER', #'BaseCommand'.close_producer};
 to_type_and_field_pos(#'CommandSubscribe'{}) ->
     {'SUBSCRIBE', #'BaseCommand'.subscribe};
 to_type_and_field_pos(#'CommandUnsubscribe'{}) ->
     {'UNSUBSCRIBE', #'BaseCommand'.unsubscribe};
+to_type_and_field_pos(#'CommandCloseConsumer'{}) ->
+    {'CLOSE_CONSUMER', #'BaseCommand'.close_consumer};
 to_type_and_field_pos(#'CommandSend'{}) ->
     {'SEND', #'BaseCommand'.send};
 to_type_and_field_pos(#'CommandFlow'{}) ->

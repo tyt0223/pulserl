@@ -374,7 +374,6 @@ handle_cast({close, AttemptRestart}, #state{partition_count = PartitionCount} = 
                end,
            {noreply, State2};
        true ->
-           unsubscribe_to_topic(State),
            error_logger:info_msg("Consumer(~p) with subscription [~p] "
                                  "is permanelty closing",
                                  [self(), State#state.consumer_subscription_name]),
@@ -1215,6 +1214,7 @@ create_child_consumer(Retries,
 
 close_children(State) ->
     foreach_child(fun(Pid) -> pulserl_consumer:close(Pid, false) end, State),
+    unsubscribe_to_topic(State),
     State#state{child_to_partition = #{}, partition_to_child = #{}}.
 
 foreach_child(Fun, State) when is_function(Fun) ->
