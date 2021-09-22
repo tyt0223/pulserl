@@ -18,11 +18,12 @@
 -export([code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
          terminate/2]).
 %% Producer API
--export([close/1, close/2, create/2, send/3, sync_send/3]).
+-export([close/1, close/2, create/2, create/3, send/3, sync_send/3]).
 -export([new_message/1, new_message/2]).
 
 -define(STATE_READY, ready).
 -define(CALL_TIMEOUT, 180000).
+-define(SESSION_TIMEOUT, 60000).
 -define(INFO_SEND_BATCH, send_batch).
 -define(INFO_ACK_TIMEOUT, ack_timeout).
 -define(INFO_REINITIALIZE, try_reinitialize).
@@ -141,15 +142,21 @@ sync_send(Pid, #producerMessage{} = Message, Timeout)
     end.
 
 create(#topic{} = Topic, Options) ->
+    create(Topic, Options, ?SESSION_TIMEOUT);
+create(Topic, Options) ->
+    create(topic_utils:parse(Topic), Options, ?SESSION_TIMEOUT).
+
+
+create(#topic{} = Topic, Options, Timeout) ->
     case whereis(pulserl_client) of
         ?UNDEF ->
             ?ERROR_CLIENT_NOT_STARTED;
         _ ->
             Options2 = validate_options(Options),
-            supervisor:start_child(pulserl_producer_sup, [Topic, Options2])
+            supervisor:start_child(pulserl_producer_sup, [Topic, Options2, Timeout])
     end;
-create(Topic, Options) ->
-    create(topic_utils:parse(Topic), Options).
+create(Topic, Options, Timeout) ->
+    create(topic_utils:parse(Topic), Options, Timeout).
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -176,6 +183,7 @@ start_link(#topic{} = Topic, Options) ->
 -record(metrics, {sent_messages = 0, ack_messages = 0}).
 -record(state,
         {state, connection :: pid(), producer_id :: integer(),
+         session_timeout :: non_neg_integer(),
          %% start of producer options
          producer_name :: string(),
          producer_properties = [] :: list() | #{},
@@ -197,12 +205,13 @@ start_link(#topic{} = Topic, Options) ->
          max_pending_requests_across_partitions :: integer(), block_on_full_queue :: boolean(),
          send_timeout_timer :: reference(), metrics = #metrics{} :: #metrics{}}).
 
-init([#topic{} = Topic, Opts]) ->
+init([#topic{} = Topic, Opts, Timeout]) ->
     process_flag(trap_exit, true),
     ProducerOpts = proplists:get_value(producer, Opts, []),
     State =
         #state{topic = Topic,
                options = Opts,
+               session_timeout = Timeout,
                producer_name = proplists:get_value(producer_name, ProducerOpts),
                producer_properties = proplists:get_value(properties, ProducerOpts, []),
                producer_initial_sequence_id =
@@ -220,16 +229,16 @@ init([#topic{} = Topic, Opts]) ->
         {error, Reason} ->
             {stop, Reason};
         NewState ->
-            {ok, notify_instance_provider_of_state(NewState, producer_up)}
+            {ok, notify_instance_provider_of_state(NewState, producer_up), Timeout}
     end.
 
-handle_call(_, _From, #state{state = ?UNDEF} = State) ->
+handle_call(_, _From, #state{state = ?UNDEF, session_timeout = Timeout} = State) ->
     %% I'm not ready yet
-    {reply, ?ERROR_PRODUCER_UNREADY, State};
+    {reply, ?ERROR_PRODUCER_UNREADY, State, Timeout};
 %% The parent
 handle_call({send_message, _ClientFrom, #producerMessage{partition_key = PartitionKey}},
             _From,
-            #state{partition_count = PartitionCount} = State)
+            #state{partition_count = PartitionCount, session_timeout = Timeout} = State)
     when PartitionCount > 0 ->
     %% This producer is the partition parent.
     %% We choose the child producer and redirect
@@ -241,22 +250,24 @@ handle_call({send_message, _ClientFrom, #producerMessage{partition_key = Partiti
             {_, State2} ->
                 {?ERROR_PRODUCER_UNREADY, State2}
         end,
-    {reply, Replay, State3};
+    {reply, Replay, State3, Timeout};
 %% The child/no-child-producer
 handle_call({send_message, ClientFrom, Message},
             _From,
-            #state{pending_requests = PendingReqs, max_pending_requests = MaxPendingReqs} =
-                State) ->
+            #state{pending_requests = PendingReqs
+                , max_pending_requests = MaxPendingReqs
+                , session_timeout = Timeout} =
+            State) ->
     case queue:len(PendingReqs) < MaxPendingReqs of
         true ->
             {Reply, State2} = send_message(Message, ClientFrom, State),
-            {reply, Reply, increment_sent_metric(State2, 1)};
+            {reply, Reply, increment_sent_metric(State2, 1), Timeout};
         _ ->
-            {reply, ?ERROR_PRODUCER_QUEUE_IS_FULL, State}
+            {reply, ?ERROR_PRODUCER_QUEUE_IS_FULL, State, Timeout}
     end;
 handle_call(Request, _From, State) ->
     error_logger:warning_msg("Unexpected call: ~p in ~p(~p)", [Request, ?MODULE, self()]),
-    {reply, ok, State}.
+    {reply, ok, State, State#state.session_timeout}.
 
 %% The producer was ask to close
 handle_cast({close, AttemptRestart}, State) ->
@@ -266,7 +277,7 @@ handle_cast({close, AttemptRestart}, State) ->
                                   [topic_utils:to_string(State#state.topic)]),
             State2 = close_children(State, AttemptRestart),
             State3 = send_reply_to_all_waiters(?ERROR_PRODUCER_CLOSED, State2),
-            {noreply, reinitialize(State3#state{state = ?UNDEF})};
+            {noreply, reinitialize(State3#state{state = ?UNDEF}), State#state.session_timeout};
         _ ->
             error_logger:info_msg("Producer(~p) at: ~p is permanelty closing",
                                   [self(), topic_utils:to_string(State#state.topic)]),
@@ -275,14 +286,15 @@ handle_cast({close, AttemptRestart}, State) ->
     end;
 handle_cast(Request, State) ->
     error_logger:warning_msg("Unexpected Cast: ~p", [Request]),
-    {noreply, State}.
+    {noreply, State, State#state.session_timeout}.
 
 handle_info({ack_received, SequenceId, MessageId},
             #state{topic = Topic,
                    metrics = Metrics,
                    seqId2waiters = SeqId2Waiters,
-                   pending_requests = PendingReqs} =
-                State) ->
+                   pending_requests = PendingReqs,
+                   session_timeout = Timeout} =
+            State) ->
     Reply = pulserl_utils:new_message_id(Topic, MessageId),
     {_, PendingReqs2} = queue:out(PendingReqs),
     State2 = State#state{pending_requests = PendingReqs2},
@@ -294,46 +306,46 @@ handle_info({ack_received, SequenceId, MessageId},
             _ ->
                 State2
         end,
-    {noreply, send_reply_to_waiter(SequenceId, Reply, State3)};
+    {noreply, send_reply_to_waiter(SequenceId, Reply, State3), Timeout};
 handle_info({send_error, SequenceId, {error, _} = Error}, State) ->
-    {noreply, send_reply_to_waiter(SequenceId, Error, State)};
+    {noreply, send_reply_to_waiter(SequenceId, Error, State), State#state.session_timeout};
 handle_info(?INFO_SEND_BATCH, State) ->
     State2 = send_batch_if_possible(true, State),
-    {noreply, start_send_batch_timer(State2)};
+    {noreply, start_send_batch_timer(State2), State#state.session_timeout};
 handle_info(?INFO_ACK_TIMEOUT, State) ->
     {NewDelay, State2} = handle_ack_timer_timeout(State),
-    {noreply, start_ack_timeout_timer(State2, NewDelay)};
+    {noreply, start_ack_timeout_timer(State2, NewDelay), State#state.session_timeout};
 %% Our connection is down. We stop the scheduled
 %% re-initialization attempts and try again after
 %% a `connection_up` message
 handle_info(connection_down, State) ->
     State2 = send_reply_to_all_waiters(?ERROR_PRODUCER_CLOSED, State),
     State3 = cancel_all_timers(State2),
-    {noreply, State3#state{state = ?UNDEF}};
+    {noreply, State3#state{state = ?UNDEF}, State#state.session_timeout};
 %% Try re-initialization again
 handle_info(connection_up, State) ->
-    {noreply, reinitialize(State)};
+    {noreply, reinitialize(State), State#state.session_timeout};
 %% Last reinitialization failed. Still trying..
 handle_info(?INFO_REINITIALIZE, State) ->
-    {noreply, reinitialize(State)};
+    {noreply, reinitialize(State), State#state.session_timeout};
 handle_info({'DOWN', _ConnMonitorRef, process, _Pid, _}, #state{} = State) ->
     %% This shouldn't happen as we design the connection to avoid crashing
     {stop, normal, send_reply_to_all_waiters(?ERROR_PRODUCER_CLOSED, State)};
-handle_info({'EXIT', Pid, Reason}, State) ->
+handle_info({'EXIT', Pid, Reason}, #state{session_timeout = Timeout} = State) ->
     case Reason of
         normal ->
-            {noreply, State};
+            {noreply, State, Timeout};
         _ ->
             case maybe_child_producer_exited(Pid, Reason, State) of
                 {error, Reason} ->
                     {stop, Reason, State};
                 #state{} = NewState ->
-                    {noreply, NewState}
+                    {noreply, NewState, Timeout}
             end
     end;
 handle_info(Info, State) ->
     error_logger:warning_msg("Unexpected Info: ~p", [Info]),
-    {noreply, State}.
+    {noreply, State, State#state.session_timeout}.
 
 terminate(_Reason, State) ->
     notify_instance_provider_of_state(State, producer_down).
