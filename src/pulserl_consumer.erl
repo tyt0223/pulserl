@@ -136,6 +136,7 @@ get_partitioned_consumers(Pid) ->
          partition_to_child = #{}, child_to_partition = #{}, options :: list(), topic :: #topic{},
           read_compacted :: integer(),
          %%
+         durable :: boolean(),
          parent_consumer :: pid(),
          re_init_attempts =
              0, %% Number of times the re-initialization has been attempted
@@ -194,6 +195,7 @@ init([#topic{} = Topic, SessionPid, Subscription, Opts]) ->
                consumer_subscription_name = SubscriptionName,
                consumer_subscription_type = SubscriptionType,
                 consumer_name = ConSumerName,
+                durable = proplists:get_value(durable, Opts, true),
 %%               consumer_name = proplists:get_value(name, ConsumerOpts),
                consumer_properties = proplists:get_value(properties, Opts, []),
                consumer_priority_level = proplists:get_value(priority_level, Opts, 0),
@@ -1080,9 +1082,10 @@ subscribe_to_topic(State) ->
         #'CommandSubscribe'{consumer_id = State#state.consumer_id,
                             subType = to_pulsar_subType(SubType),
                             consumer_name = State#state.consumer_name,
-          read_compacted = State#state.read_compacted,
+                            read_compacted = State#state.read_compacted,
                             topic = topic_utils:to_string(State#state.topic),
                             subscription = State#state.consumer_subscription_name,
+                            durable = State#state.durable,
                             metadata =
                                 commands:to_con_prod_metadata(State#state.consumer_properties),
                             initialPosition =
@@ -1320,6 +1323,19 @@ validate_options(Options) when is_list(Options) ->
                         erlwater_assertions:is_non_negative_int(Opt);
                       ({name, _} = Opt) ->
                         erlwater_assertions:is_string(Opt);
+                      ({durable, V}) ->
+                        case V of
+                            true ->
+                                ok;
+                            false ->
+                                ok;
+                            0 ->
+                                ok;
+                            1 ->
+                                ok;
+                            _ ->
+                                error({invalid_durable, V}, [Options])
+                        end;
                       (Opt) ->
                           error(unknown_consumer_options, [Opt])
                   end,

@@ -13,7 +13,7 @@
 -behaviour(gen_server).
 
 %% gen_Server API
--export([start_link/2]).
+-export([start_link/3]).
 %% gen_server callbacks
 -export([code_change/3, handle_call/3, handle_cast/2, handle_info/2, init/1,
          terminate/2]).
@@ -173,8 +173,8 @@ close(Pid, AttemptRestart) ->
 %%% gen_server API
 %%%===================================================================
 
-start_link(#topic{} = Topic, Options) ->
-    gen_server:start_link(?MODULE, [Topic, Options], []).
+start_link(#topic{} = Topic, Options, Timeout) ->
+    gen_server:start_link(?MODULE, [Topic, Options, Timeout], []).
 
 %%%===================================================================
 %%% gen_server callbacks
@@ -187,8 +187,8 @@ start_link(#topic{} = Topic, Options) ->
          %% start of producer options
          producer_name :: string(),
          producer_properties = [] :: list() | #{},
-         send_timeout ::
-             integer(), %% [0, ...], 0 means no timeout and retry forever
+        %  send_timeout ::
+        %      integer(), %% [0, ...], 0 means no timeout and retry forever
          producer_initial_sequence_id :: integer(),
          %% end of producer options
          topic :: #topic{},
@@ -219,7 +219,7 @@ init([#topic{} = Topic, Opts, Timeout]) ->
                partition_routing_mode =
                    proplists:get_value(routing_mode, Opts, ?ROUND_ROBIN_ROUTING),
                batch_enable = proplists:get_value(batch_enable, Opts, true),
-               send_timeout = proplists:get_value(send_timeout, ProducerOpts, 30000),
+            %    send_timeout = proplists:get_value(send_timeout, ProducerOpts, 30000),
                batch_max_delay_ms = proplists:get_value(batch_max_delay_ms, Opts, 10),
                max_batched_messages = proplists:get_value(batch_max_messages, Opts, 1000),
                max_pending_requests = proplists:get_value(max_pending_requests, Opts, 50000),
@@ -258,6 +258,7 @@ handle_call({send_message, ClientFrom, Message},
                 , max_pending_requests = MaxPendingReqs
                 , session_timeout = Timeout} =
             State) ->
+    % error_logger:warning_msg("send_message (~p)", [self()]),
     case queue:len(PendingReqs) < MaxPendingReqs of
         true ->
             {Reply, State2} = send_message(Message, ClientFrom, State),
@@ -295,6 +296,7 @@ handle_info({ack_received, SequenceId, MessageId},
                    pending_requests = PendingReqs,
                    session_timeout = Timeout} =
             State) ->
+    % error_logger:warning_msg("ack_received (~p)", [self()]),
     Reply = pulserl_utils:new_message_id(Topic, MessageId),
     {_, PendingReqs2} = queue:out(PendingReqs),
     State2 = State#state{pending_requests = PendingReqs2},
@@ -308,30 +310,41 @@ handle_info({ack_received, SequenceId, MessageId},
         end,
     {noreply, send_reply_to_waiter(SequenceId, Reply, State3), Timeout};
 handle_info({send_error, SequenceId, {error, _} = Error}, State) ->
+    % error_logger:warning_msg("send_error (~p)", [self()]),
     {noreply, send_reply_to_waiter(SequenceId, Error, State), State#state.session_timeout};
 handle_info(?INFO_SEND_BATCH, State) ->
     State2 = send_batch_if_possible(true, State),
     {noreply, start_send_batch_timer(State2), State#state.session_timeout};
-handle_info(?INFO_ACK_TIMEOUT, State) ->
-    {NewDelay, State2} = handle_ack_timer_timeout(State),
-    {noreply, start_ack_timeout_timer(State2, NewDelay), State#state.session_timeout};
+% handle_info(?INFO_ACK_TIMEOUT, State) ->
+%     error_logger:warning_msg("INFO_ACK_TIMEOUT (~p)", [self()]),
+%     {NewDelay, State2} = handle_ack_timer_timeout(State),
+%     {noreply, start_ack_timeout_timer(State2, NewDelay), State#state.session_timeout};
 %% Our connection is down. We stop the scheduled
 %% re-initialization attempts and try again after
 %% a `connection_up` message
 handle_info(connection_down, State) ->
+    % error_logger:warning_msg("connection_down (~p)", [self()]),
     State2 = send_reply_to_all_waiters(?ERROR_PRODUCER_CLOSED, State),
     State3 = cancel_all_timers(State2),
     {noreply, State3#state{state = ?UNDEF}, State#state.session_timeout};
 %% Try re-initialization again
 handle_info(connection_up, State) ->
+    % error_logger:warning_msg("connection_up (~p)", [self()]),
     {noreply, reinitialize(State), State#state.session_timeout};
 %% Last reinitialization failed. Still trying..
 handle_info(?INFO_REINITIALIZE, State) ->
+    % error_logger:warning_msg("INFO_REINITIALIZE (~p)", [self()]),
     {noreply, reinitialize(State), State#state.session_timeout};
+handle_info(timeout, #state{} = State) ->
+    % error_logger:warning_msg("recv timeout msg call: (~p)", [self()]),
+    State2 = send_reply_to_all_waiters(?ERROR_SEND_TIMEOUT, State),
+    {stop, normal, close_children(State2, false)};
 handle_info({'DOWN', _ConnMonitorRef, process, _Pid, _}, #state{} = State) ->
+    % error_logger:warning_msg("'DOWN' (~p)", [self()]),
     %% This shouldn't happen as we design the connection to avoid crashing
     {stop, normal, send_reply_to_all_waiters(?ERROR_PRODUCER_CLOSED, State)};
 handle_info({'EXIT', Pid, Reason}, #state{session_timeout = Timeout} = State) ->
+    % error_logger:warning_msg("recv exit msg call: ~p in ~p(~p)", [Reason, self()]),
     case Reason of
         normal ->
             {noreply, State, Timeout};
@@ -357,26 +370,26 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-handle_ack_timer_timeout(#state{send_timeout = SendTimeout,
-                                pending_requests = PendingRequests} =
-                             State) ->
-    case queue:out(PendingRequests) of
-        {empty, _} ->
-            {SendTimeout, State};
-        {{value, {CreateTime, {SeqId, _}}}, PendingRequests2} ->
-            Diff = erlwater_time:milliseconds() - CreateTime,
-            if Diff >= SendTimeout ->
-                   State2 = State#state{pending_requests = PendingRequests2},
-                   {SendTimeout, send_reply_to_waiter(SeqId, ?ERROR_SEND_TIMEOUT, State2)};
-               true ->
-                   {SendTimeout - Diff, State}
-            end
-    end.
+% handle_ack_timer_timeout(#state{send_timeout = SendTimeout,
+%                                 pending_requests = PendingRequests} =
+%                              State) ->
+%     case queue:out(PendingRequests) of
+%         {empty, _} ->
+%             {0, State};
+%         {{value, {CreateTime, {SeqId, _}}}, PendingRequests2} ->
+%             Diff = erlwater_time:milliseconds() - CreateTime,
+%             if Diff >= SendTimeout ->
+%                    State2 = State#state{pending_requests = PendingRequests2},
+%                    {SendTimeout, send_reply_to_waiter(SeqId, ?ERROR_SEND_TIMEOUT, State2)};
+%                true ->
+%                    {SendTimeout - Diff, State}
+%             end
+%     end.
 
 send_reply_to_waiter(SequenceId, Reply, #state{seqId2waiters = SeqId2Waiters} = State) ->
     case maps:get(SequenceId, SeqId2Waiters, ?UNDEF) of
         ?UNDEF ->
-            if State#state.send_timeout > 0 ->
+            if erlang:is_integer(State#state.session_timeout) == true ->
                    error_logger:warning_msg("Received a command receipt for in producer: "
                                             "~p but couldn't see any waiter for it; "
                                             "sequence-id = ~p.",
@@ -544,6 +557,7 @@ do_send_message(SeqId,
     SeqId2Requests2 = maps:put(SeqId, [From || {From, _} <- Requests], SeqId2Requests),
     PendingRequests2 =
         queue:in({erlwater_time:milliseconds(), {SeqId, Requests}}, PendingRequests),
+    % start_ack_timeout_timer(),
     State#state{sequence_id = SeqId + 1,
                 seqId2waiters = SeqId2Requests2,
                 pending_requests = PendingRequests2}.
@@ -754,9 +768,10 @@ initialize_self(#state{topic = Topic} = State) ->
                 {ok, Pid} ->
                     Id = pulserl_conn:register_handler(Pid, self(), producer),
                     case establish_producer(State#state{connection = Pid, producer_id = Id}) of
-                        #state{send_timeout = SendTimeout} = State2 ->
-                            State3 = start_ack_timeout_timer(State2, SendTimeout),
-                            start_send_batch_timer(State3);
+                        % #state{send_timeout = SendTimeout} = State2 ->
+                        #state{} = State2 ->
+                            % State3 = start_ack_timeout_timer(State2, SendTimeout),
+                            start_send_batch_timer(State2);
                         {error, _} = Error ->
                             Error
                     end;
@@ -813,11 +828,14 @@ establish_producer(#state{topic = Topic} = State) ->
                             end}
     end.
 
-start_ack_timeout_timer(#state{send_timeout = 0} = State, _Delay) ->
-    State;
-start_ack_timeout_timer(State, Delay) ->
-    Delay2 = erlang:min(Delay, State#state.send_timeout),
-    State#state{send_timeout_timer = erlang:send_after(Delay2, self(), ?INFO_ACK_TIMEOUT)}.
+% start_ack_timeout_timer(#state{send_timeout = 0} = State, _Delay) ->
+%     State;
+% start_ack_timeout_timer(State, 0) ->
+%     % Delay2 = erlang:min(Delay, State#state.send_timeout),
+%     State#state{send_timeout_timer = undefined};
+% start_ack_timeout_timer(State, Delay) ->
+%     Delay2 = erlang:min(Delay, State#state.send_timeout),
+%     State#state{send_timeout_timer = erlang:send_after(Delay2, self(), ?INFO_ACK_TIMEOUT)}.
 
 start_send_batch_timer(#state{batch_enable = false} = State) ->
     State;
@@ -827,9 +845,9 @@ start_send_batch_timer(#state{batch_max_delay_ms = BatchDelay} = State) ->
 create_inner_producer(Index, State) ->
     create_inner_producer(3, Index, State).
 
-create_inner_producer(Retries, Index, #state{topic = Topic, options = Opts} = State) ->
+create_inner_producer(Retries, Index, #state{topic = Topic, options = Opts, session_timeout = Timeout} = State) ->
     PartitionedTopic = topic_utils:new_partition(Topic, Index),
-    case pulserl_producer:start_link(PartitionedTopic, Opts) of
+    case pulserl_producer:start_link(PartitionedTopic, Opts, Timeout+1000) of
         {ok, Pid} ->
             {Pid,
              State#state{partition_to_child =
