@@ -1103,10 +1103,10 @@ subscribe_to_topic(State) ->
         {error, _} = Err ->
             Err;
         #'CommandSuccess'{} ->
-            error_logger:info_msg("Consumer=~p with subscription=~s subscribed "
-                                  "to topic=~s",
-                                  [self(),
+            error_logger:info_msg("[pulserl consumer] ~s [~s](~w) subscribed: ~s",
+                                  [State#state.consumer_name,
                                    State#state.consumer_subscription_name,
+                                   State#state.durable,
                                    topic_utils:to_string(State#state.topic)]),
             State
     end.
@@ -1119,12 +1119,26 @@ unsubscribe_to_topic(State) ->
     {error, _} = Err ->
       {{error, Err}, State};
     #'CommandSuccess'{} ->
-      error_logger:info_msg("Consumer=~p  unsubscribed "
-      "to topic=~s",
-        [self(),
+      error_logger:info_msg("[pulserl consumer] ~s unsubscribed: ~s",
+        [State#state.consumer_name,
           topic_utils:to_string(State#state.topic)]),
       {ok, State}
   end.
+
+
+command_close_consumer(State) ->
+    CloseConsumer =
+        #'CommandCloseConsumer'{consumer_id = State#state.consumer_id},
+    case pulserl_conn:send_simple_command(State#state.connection, CloseConsumer) of
+        {error, _} = Err ->
+            {{error, Err}, State};
+        #'CommandSuccess'{} ->
+            error_logger:info_msg("[pulserl consumer] ~s [~s] closed: ~s",
+                [State#state.consumer_name,
+                State#state.consumer_subscription_name,
+                topic_utils:to_string(State#state.topic)]),
+            {ok, State}
+    end.
 
 
 send_flow_permits(#state{queue_size = QueueSize} = State) ->
@@ -1217,7 +1231,7 @@ create_child_consumer(Retries,
 
 close_children(State) ->
     foreach_child(fun(Pid) -> pulserl_consumer:close(Pid, false) end, State),
-    unsubscribe_to_topic(State),
+    command_close_consumer(State),
     State#state{child_to_partition = #{}, partition_to_child = #{}}.
 
 foreach_child(Fun, State) when is_function(Fun) ->

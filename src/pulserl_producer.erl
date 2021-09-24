@@ -818,6 +818,9 @@ establish_producer(#state{topic = Topic} = State) ->
         {error, _} = Err ->
             Err;
         #'CommandProducerSuccess'{producer_name = ProducerName, last_sequence_id = LSeqId} ->
+            error_logger:info_msg("[pulserl producer] ~s subscribed: ~s",
+                                  [State#state.producer_name,
+                                   topic_utils:to_string(State#state.topic)]),
             State#state{producer_name = ProducerName,
                         sequence_id =
                             case LSeqId >= 0 of
@@ -943,15 +946,14 @@ validate_options(Options) when is_list(Options) ->
 
 
 close_to_topic(State) ->
-  CloseProducer =
-    #'CommandCloseProducer'{producer_id = State#state.producer_id},
-  case pulserl_conn:send_simple_command(State#state.connection, CloseProducer) of
-    {error, _} = Err ->
-      {{error, Err}, State};
-    #'CommandSuccess'{} ->
-      error_logger:info_msg("Producer=~p  close "
-      "to topic=~s",
-        [self(),
-          topic_utils:to_string(State#state.topic)]),
-      {ok, State}
-  end.
+    CloseProducer =
+        #'CommandCloseProducer'{producer_id = State#state.producer_id},
+    case pulserl_conn:send_simple_command(State#state.connection, CloseProducer) of
+        {error, _} = Err ->
+            {{error, Err}, State};
+        #'CommandSuccess'{} ->
+            error_logger:info_msg("[pulserl producer] ~s close: ~s",
+                [State#state.producer_name,
+                topic_utils:to_string(State#state.topic)]),
+            {ok, State}
+    end.
